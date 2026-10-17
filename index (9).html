@@ -1,0 +1,1724 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Table ronde IA</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Table ronde">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<style>
+/* Layout : barre de prompt en haut, fil de la conversation, quatre colonnes de réponses (2×2 sur tablette, 1 sur téléphone) */
+:root{
+  --bg:#f3f4f7; --surface:#ffffff; --sunk:#eceef3; --fg:#171a21; --muted:#5b6270; --line:#dadde5;
+  --accent:#2f45c9; --accent-fg:#ffffff; --danger:#b42318; --ok:#1c7c4a;
+  --c-openai:#0f8f6f; --c-anthropic:#c4613f; --c-gemini:#3b74e0; --c-mistral:#e8590c;
+  --f-ui:"Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#111318; --surface:#1a1d24; --sunk:#22262f; --fg:#e8eaf0; --muted:#9aa1ae; --line:#2b303a;
+  --accent:#7d8ff5; --accent-fg:#0d1020; --danger:#f2867c; --ok:#5fc98e;
+  --c-openai:#3cc9a1; --c-anthropic:#e58a68; --c-gemini:#7aa5f5; --c-mistral:#ff8a4c; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#111318; --surface:#1a1d24; --sunk:#22262f; --fg:#e8eaf0; --muted:#9aa1ae; --line:#2b303a;
+  --accent:#7d8ff5; --accent-fg:#0d1020; --danger:#f2867c; --ok:#5fc98e;
+  --c-openai:#3cc9a1; --c-anthropic:#e58a68; --c-gemini:#7aa5f5; --c-mistral:#ff8a4c; color-scheme:dark; }
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 var(--f-ui);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:env(safe-area-inset-top,0px) 24px}
+button,input,textarea,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+header.top{display:flex;align-items:center;gap:8px;padding-block:18px 14px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto;flex-wrap:wrap}
+.brand h1{font-size:20px;font-weight:700;letter-spacing:-.01em;margin:0}
+.brand span{color:var(--muted);font-size:13px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:14px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.ghost{border-color:transparent;background:transparent;padding:4px 8px;color:var(--muted)}
+.btn.ghost:hover{color:var(--fg);background:var(--sunk)}
+.btn.danger{color:var(--danger)}
+
+.composer{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.composer textarea{width:100%;min-height:76px;max-height:40vh;resize:vertical;border:0;background:transparent;outline:none;font-size:16px;line-height:1.5}
+.composer-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.toggles{display:flex;gap:6px;flex-wrap:wrap;margin-right:auto}
+.chip{position:relative;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 10px 4px 8px;font-size:13px;cursor:pointer;user-select:none;background:var(--bg)}
+.chip input{position:absolute;opacity:0;pointer-events:none}
+.chip .dot{width:9px;height:9px;border-radius:50%;background:var(--pc);opacity:.35}
+.chip:has(input:checked){border-color:var(--pc);background:var(--surface)}
+.chip:has(input:checked) .dot{opacity:1}
+.chip:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.hint{color:var(--muted);font-size:12px;font-family:var(--f-mono)}
+@media (max-width:1180px), (pointer:coarse){.hint{display:none}}
+
+.threadbar{display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap}
+.threadbar h2{font-size:16px;font-weight:600;margin:0;min-width:0;flex:1 1 200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.threadbar .meta{color:var(--muted);font:12px var(--f-mono);font-variant-numeric:tabular-nums}
+.saved{display:inline-flex;align-items:center;gap:5px;color:var(--ok);font:12px var(--f-mono)}
+.saved::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok)}
+
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:10px}
+@media (max-width:1180px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.grid{grid-template-columns:minmax(0,1fr)}}
+.col{background:var(--surface);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;min-width:0;min-height:320px;border-top:3px solid var(--pc)}
+.col.off{opacity:.55}
+.col-head{display:flex;flex-direction:column;gap:8px;padding:12px 12px 10px;border-bottom:1px solid var(--line)}
+.col-title{display:flex;align-items:center;gap:8px}
+.col-title strong{font-size:15px}
+.col-title small{color:var(--muted);font-size:12px}
+.status{margin-left:auto;font:500 11px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.06em;padding:4px 7px;border-radius:5px;background:var(--sunk);color:var(--muted);white-space:nowrap}
+.status.run{color:var(--accent)}
+.status.done{color:var(--ok)}
+.status.err{color:var(--danger)}
+.model-row{display:flex;gap:6px;align-items:center}
+.model-row input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:5px 8px;font:13px var(--f-mono)}
+.col-body{padding:12px 14px;overflow:auto;flex:1;min-height:0;max-height:72vh;overflow-wrap:anywhere}
+.col-body.empty{color:var(--muted);font-size:14px;display:flex;align-items:center;justify-content:center;text-align:center}
+.col-foot{display:flex;align-items:center;gap:8px;padding:6px 8px 8px 14px;border-top:1px solid var(--line);font:12px var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.col-foot .sp{margin-left:auto}
+
+.turn{display:flex;flex-direction:column;gap:8px;padding-bottom:14px;margin-bottom:14px;border-bottom:1px dashed var(--line)}
+.turn:last-child{border-bottom:0;margin-bottom:0;padding-bottom:0}
+.ask{align-self:flex-end;max-width:92%;background:var(--sunk);border-radius:10px 10px 2px 10px;padding:6px 10px;font-size:13.5px;white-space:pre-wrap}
+.ans.error{color:var(--danger);white-space:pre-wrap;font-size:14px}
+.ans.skip{color:var(--muted);font-size:13px;font-style:italic}
+.tmeta{font:11.5px var(--f-mono);color:var(--muted)}
+.tmeta:empty{display:none}
+
+.composer.drag{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent)}
+.vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.attach-row{display:flex;gap:8px;flex-wrap:wrap}
+.att{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:4px 4px 4px 4px;background:var(--bg);font-size:12.5px;max-width:240px;min-width:0}
+.att img,.att .pdf{width:36px;height:36px;flex:none;border-radius:5px;object-fit:cover}
+.att .pdf{background:var(--sunk);display:grid;place-items:center;font:600 10px var(--f-mono);color:var(--danger)}
+.att .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;display:flex;flex-direction:column}
+.att .nm small{color:var(--muted);font:11px var(--f-mono)}
+.att button{border:0;background:none;color:var(--muted);cursor:pointer;padding:4px 6px;border-radius:5px;font-size:14px}
+.att button:hover{color:var(--fg);background:var(--sunk)}
+.ask .atts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-bottom:5px}
+.ask .atts img{width:56px;height:56px;object-fit:cover;border-radius:6px;display:block}
+.ask .pdfb{font:11px var(--f-mono);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.md{font-size:14.5px}
+.md>*:first-child{margin-top:0}
+.md>*:last-child{margin-bottom:0}
+.md p,.md ul,.md ol{margin:0 0 .7em}
+.md h1,.md h2,.md h3,.md h4{font-size:1.05em;margin:1em 0 .4em;line-height:1.3}
+.md pre{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto;font:12.5px/1.5 var(--f-mono)}
+.md code{font-family:var(--f-mono);font-size:.9em;background:var(--sunk);padding:.1em .3em;border-radius:4px}
+.md pre code{background:none;padding:0}
+.md table{border-collapse:collapse;display:block;overflow-x:auto;font-size:13px}
+.md th,.md td{border:1px solid var(--line);padding:4px 8px;text-align:left}
+.md blockquote{margin:0 0 .7em;padding-left:10px;border-left:3px solid var(--line);color:var(--muted)}
+.md a{color:var(--accent)}
+.cursor::after{content:"▍";color:var(--accent);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.cursor::after{animation:none}}
+
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--fg);padding:0;width:min(680px,calc(100vw - 32px));max-height:calc(100vh - 48px)}
+dialog[open]{display:flex;flex-direction:column}
+dialog > form{display:flex;flex-direction:column;min-height:0}
+dialog::backdrop{background:rgba(10,12,18,.45)}
+.dlg-head{display:flex;align-items:center;gap:6px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.dlg-head h2{font-size:17px;margin:0;margin-right:auto}
+.dlg-body{padding:16px 18px;display:flex;flex-direction:column;gap:14px;overflow:auto;min-height:0}
+.dlg-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line);flex-wrap:wrap}
+.dlg-foot .left{margin-right:auto;display:flex;gap:8px;flex-wrap:wrap}
+.keyrow{display:flex;flex-direction:column;gap:6px}
+.keyrow label{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;flex-wrap:wrap}
+.keyrow label .dot{width:9px;height:9px;border-radius:50%;background:var(--pc)}
+.keyrow label a{margin-left:auto;font-weight:400;font-size:13px;color:var(--accent)}
+.keyrow input,.search{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px;font:13px var(--f-mono);width:100%}
+.search{font:14px var(--f-ui)}
+.note{font-size:13px;color:var(--muted);background:var(--sunk);border-radius:8px;padding:10px 12px;margin:0}
+.hist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.hist li{display:flex;gap:6px;align-items:stretch}
+.hist .open{flex:1;min-width:0;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.hist .open:hover{border-color:var(--muted)}
+.hist .open.current{border-color:var(--accent)}
+.hist b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist small{color:var(--muted);font:12px var(--f-mono)}
+.sources{font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:var(--bg)}
+.sources summary{cursor:pointer;color:var(--muted);font:12px var(--f-mono)}
+.sources ol{margin:6px 0 2px;padding-left:20px;display:flex;flex-direction:column;gap:3px}
+.sources a{color:var(--accent);text-decoration:none;overflow-wrap:anywhere}
+.sources a:hover{text-decoration:underline}
+.sources small{color:var(--muted);font:11px var(--f-mono);margin-left:4px}
+.webtag{font:11px var(--f-mono);color:var(--accent);margin-bottom:3px;text-align:right}
+.tools{display:flex;gap:2px;flex-wrap:wrap;margin-top:-4px}
+.tools button{border:0;background:none;color:var(--muted);font:12px var(--f-mono);padding:4px 7px;border-radius:5px;cursor:pointer}
+.tools button:hover{color:var(--fg);background:var(--sunk)}
+.tools button:disabled{opacity:.5}
+.exp-group{display:flex;align-items:center;gap:2px}
+.exp-group span{color:var(--muted);font:12px var(--f-mono);margin-right:2px}
+#printArea{display:none}
+@media print{
+  @page{margin:16mm}
+  body{background:#fff!important;color:#000!important;padding:0!important}
+  body > *:not(#printArea){display:none!important}
+  #printArea{display:block!important;color:#000}
+  #printArea .md{font:11.5pt/1.5 var(--f-ui)}
+  #printArea h1{font-size:18pt;margin:0 0 4pt}
+  #printArea h2{font-size:14pt;margin-top:16pt}
+  #printArea h3{font-size:12pt;margin-top:12pt}
+  #printArea pre,#printArea code{background:#f1f2f5!important;border-color:#ddd!important;color:#000}
+  #printArea table{display:table}
+  #printArea th,#printArea td{border:1px solid #bbb}
+  #printArea hr{border:0;border-top:1px solid #ccc;margin:14pt 0}
+  #printArea h1,#printArea h2,#printArea h3{break-after:avoid}
+  #printArea pre,#printArea tr{break-inside:avoid}
+}
+.mic.live,.btn.live{background:var(--danger);border-color:var(--danger);color:#fff}
+.voiceset h3{margin:0;font-size:15px}
+.voiceset label{font-size:13px;font-weight:600}
+.voiceset select{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px;width:100%}
+.voiceset .row2{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.voiceset .row2 > div{flex:1;min-width:160px;display:flex;flex-direction:column;gap:6px}
+.voicebar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:40;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 12px;box-shadow:0 10px 30px rgba(10,12,18,.18);width:min(720px,calc(100vw - 32px))}
+.vdot{width:12px;height:12px;border-radius:50%;background:var(--muted);flex:none}
+.voicebar[data-state="listening"] .vdot{background:var(--danger);animation:pulse 1.2s ease-in-out infinite}
+.voicebar[data-state="thinking"] .vdot{background:var(--accent);animation:pulse 1.6s ease-in-out infinite}
+.voicebar[data-state="speaking"] .vdot{background:var(--ok);animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.5);opacity:.5}}
+@media (prefers-reduced-motion:reduce){.vdot{animation:none!important}}
+.vstatus{flex:1 1 220px;font-size:14px;min-width:0}
+.vreader{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.vreader select{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:4px 6px;font-size:13px;color:var(--fg)}
+body:has(.voicebar:not([hidden])){padding-bottom:120px}
+#settingsForm{overflow:auto;max-height:calc(100vh - 48px)}
+#settingsForm .dlg-body{overflow:visible;flex:none;min-height:auto}
+#settingsForm .dlg-body + .dlg-body{border-top:1px solid var(--line)}
+#settingsForm .dlg-head{position:sticky;top:0;background:var(--surface);z-index:2}
+#settingsForm .dlg-foot{position:sticky;bottom:0;background:var(--surface);z-index:2}
+.syncbtn{gap:6px;font:12px var(--f-mono)}
+.syncbtn .sdot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.syncbtn[data-state="busy"] .sdot{background:var(--accent);animation:pulse 1.2s ease-in-out infinite}
+.syncbtn[data-state="err"] .sdot{background:var(--danger)}
+.syncbtn[data-state="err"]{color:var(--danger)}
+.projsel{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 8px;font-size:13px;max-width:220px;color:var(--fg)}
+.histbar{display:flex;gap:8px;flex-wrap:wrap}
+.histbar .search{flex:1 1 200px;width:auto}
+.hist .ptag{display:inline-block;font:11px var(--f-mono);color:var(--accent);margin-right:6px}
+.area,.field{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px;width:100%;font-size:14px;line-height:1.45}
+.area{resize:vertical;min-height:90px}
+.field{font-family:var(--f-mono);font-size:13px}
+.projlist{display:flex;flex-direction:column;gap:10px}
+.proj{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--bg)}
+.proj.active{border-color:var(--accent)}
+.proj .prow{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.proj .prow input{flex:1 1 180px;font-weight:600;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:6px 8px}
+.proj .count{color:var(--muted);font:12px var(--f-mono)}
+.proj textarea{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:6px 8px;min-height:64px;resize:vertical;font-size:13.5px;width:100%}
+.genimg{margin:0 0 6px;display:flex;flex-direction:column;gap:4px}
+.genimg img{max-width:100%;max-height:420px;width:auto;align-self:flex-start;border-radius:8px;display:block;cursor:zoom-in;border:1px solid var(--line)}
+.imgtag{font:11px var(--f-mono);color:#b5179e;margin-bottom:3px;text-align:right}
+.lightbox{position:fixed;inset:0;z-index:60;background:rgba(8,9,12,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom))}
+.lightbox img{max-width:100%;max-height:calc(100% - 40px);object-fit:contain;border-radius:6px;-webkit-touch-callout:default}
+.lightbox p{color:#d7dae2;font-size:13px;margin:0;text-align:center}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:14px;z-index:50;max-width:calc(100vw - 32px)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand"><h1>Table ronde IA</h1><span>un prompt, quatre réponses</span></div>
+  <button class="btn ghost syncbtn" id="btnSync" type="button" hidden title="Synchroniser maintenant"><span class="sdot"></span><span id="syncLabel">Synchronisé</span></button>
+  <button class="btn" id="btnNew" type="button">Nouvelle conversation</button>
+  <button class="btn" id="btnProjects" type="button">Projets</button>
+  <button class="btn" id="btnHistory" type="button">Historique</button>
+  <button class="btn" id="btnSettings" type="button">Réglages</button>
+</header>
+
+<form class="composer" id="composer">
+  <textarea id="prompt" placeholder="Posez votre question une seule fois, elle part vers toutes les IA cochées. Les questions suivantes tiennent compte de la conversation." aria-label="Prompt"></textarea>
+  <div class="attach-row" id="attachRow" hidden></div>
+  <div class="composer-bar">
+    <label class="btn" id="btnAttach" for="attachFile" title="Joindre des images ou des PDF" tabindex="0" role="button">＋ Joindre</label>
+    <input type="file" id="attachFile" class="vh" accept="image/*,application/pdf,.pdf" multiple tabindex="-1">
+    <button class="btn mic" id="btnMic" type="button" aria-pressed="false" title="Dicter votre question">🎤 Dicter</button>
+    <button class="btn" id="btnVoice" type="button" title="Conversation à voix haute, mains libres">🗣 Mode vocal</button>
+    <label class="chip" style="--pc:var(--accent)" title="Les IA cherchent sur internet et citent leurs sources"><input type="checkbox" id="webToggle"><span class="dot"></span>🌐 Recherche web</label>
+    <label class="chip" style="--pc:#b5179e" title="ChatGPT et Gemini créent une image à partir de votre description"><input type="checkbox" id="imgToggle"><span class="dot"></span>🎨 Créer une image</label>
+    <select id="imgSize" class="projsel" aria-label="Format de l'image" hidden><option value="square">Carré</option><option value="portrait">Portrait</option><option value="landscape">Paysage</option></select>
+    <div class="toggles" id="toggles"></div>
+    <span class="hint">Ctrl + Entrée</span>
+    <button class="btn" id="btnStop" type="button" hidden>Arrêter</button>
+    <button class="btn primary" id="btnSend" type="submit">Envoyer à tous</button>
+  </div>
+</form>
+
+<div class="threadbar">
+  <select id="projSel" class="projsel" aria-label="Projet de cette conversation"></select>
+  <h2 id="threadTitle">Nouvelle conversation</h2>
+  <span class="meta" id="threadMeta"></span>
+  <span class="saved" id="savedFlag" hidden>Enregistré</span>
+  <div class="exp-group" id="expGroup" hidden><span>Exporter :</span>
+    <button class="btn ghost" id="btnExpWord" type="button">Word</button>
+    <button class="btn ghost" id="btnExpPdf" type="button">PDF</button>
+    <button class="btn ghost" id="btnExportMd" type="button">Texte</button>
+  </div>
+</div>
+
+<main class="grid" id="grid"></main>
+
+<dialog id="dlgSettings">
+  <form method="dialog" id="settingsForm">
+    <div class="dlg-head"><h2>Réglages</h2><button class="btn ghost" value="cancel" aria-label="Fermer">✕</button></div>
+    <div class="dlg-body" id="keyRows">
+      <p class="note">Les clés restent dans ce navigateur, sur cet appareil. Elles sont envoyées uniquement au fournisseur concerné. Chaque fournisseur facture l'API à l'usage, séparément de votre abonnement.</p>
+    </div>
+    <div class="dlg-body voiceset">
+      <h3>Mémoire personnelle</h3>
+      <label for="setMemory">Ce que les IA doivent savoir sur vous, dans toutes les conversations</label>
+      <textarea id="setMemory" class="area" rows="5" placeholder="Exemples : Je vis à Paris. Réponds toujours en français, de façon claire et concise. Je suis retraité et je m'intéresse à la santé et à l'informatique. Donne les prix en euros."></textarea>
+      <p class="note">Ce texte est transmis à chaque IA au début de chaque question. Il est synchronisé entre vos appareils si la synchronisation est active.</p>
+    </div>
+    <div class="dlg-body voiceset">
+      <h3>Synchronisation entre appareils</h3>
+      <p class="note">Vos conversations, projets et votre mémoire sont copiés dans un dépôt GitHub <b>privé</b> qui vous appartient, et retrouvés sur tous vos appareils. Les clés API ne sont jamais copiées : collez-les une fois sur chaque appareil.</p>
+      <label for="syncRepo">Dépôt privé (utilisateur/nom)</label>
+      <input id="syncRepo" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="claudepodemski-prog/table-ronde-donnees">
+      <label for="syncToken">Jeton d'accès GitHub</label>
+      <input id="syncToken" class="field" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="github_pat_…">
+      <button class="btn" type="button" id="btnTestSync" style="align-self:flex-start">Tester la connexion</button>
+      <p id="syncTestMsg" class="note" hidden></p>
+    </div>
+    <div class="dlg-body voiceset">
+      <h3>Création d'images</h3>
+      <label for="imgQuality">Qualité des images ChatGPT</label>
+      <select id="imgQuality"><option value="low">Brouillon (la moins chère)</option><option value="medium">Standard</option><option value="high">Haute (la plus chère)</option></select>
+      <div class="row2">
+        <div><label for="imgModelOpenai">Modèle ChatGPT</label><input id="imgModelOpenai" class="field" type="text" autocapitalize="off" spellcheck="false" placeholder="gpt-image-1"></div>
+        <div><label for="imgModelGemini">Modèle Gemini</label><input id="imgModelGemini" class="field" type="text" autocapitalize="off" spellcheck="false" placeholder="gemini-2.5-flash-image"></div>
+      </div>
+      <p class="note">Chaque image est facturée par le fournisseur, de quelques centimes en qualité brouillon à une vingtaine de centimes en haute qualité. Ne changez les modèles que si un message d'erreur vous y invite.</p>
+    </div>
+    <div class="dlg-body voiceset">
+      <h3>Voix</h3>
+      <label for="setVoice">Voix de lecture</label>
+      <select id="setVoice"></select>
+      <div class="row2">
+        <div><label for="setRate">Vitesse</label>
+          <select id="setRate"><option value="0.85">Lente</option><option value="1">Normale</option><option value="1.15">Rapide</option><option value="1.3">Très rapide</option></select></div>
+        <button class="btn" type="button" id="btnTestVoice">Tester la voix</button>
+      </div>
+      <p class="note">Astuce : pour une voix plus naturelle, téléchargez une voix française « améliorée » ou « premium » dans Réglages de l'iPad → Accessibilité → Contenu énoncé → Voix → Français.</p>
+    </div>
+    <div class="dlg-foot"><button class="btn" value="cancel">Annuler</button><button class="btn primary" value="save">Enregistrer</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgProjects">
+  <div class="dlg-head"><h2>Projets</h2><button class="btn ghost" type="button" id="btnCloseProj" aria-label="Fermer">✕</button></div>
+  <div class="dlg-body">
+    <p class="note">Un projet regroupe des conversations sur un même sujet. Ses instructions sont transmises aux IA dans chacune de ses conversations, en plus de votre mémoire personnelle.</p>
+    <div id="projList" class="projlist"></div>
+  </div>
+  <div class="dlg-foot"><button class="btn primary" type="button" id="btnAddProj">＋ Nouveau projet</button></div>
+</dialog>
+
+<dialog id="dlgHistory">
+  <div class="dlg-head"><h2>Historique</h2><button class="btn ghost" type="button" id="btnCloseHist" aria-label="Fermer">✕</button></div>
+  <div class="dlg-body">
+    <div class="histbar"><select id="histProj" class="projsel" aria-label="Filtrer par projet"></select>
+    <input class="search" id="histSearch" type="search" placeholder="Rechercher dans les questions et les réponses" aria-label="Rechercher"></div>
+    <ul class="hist" id="histList"></ul>
+    <p class="note">Tout est enregistré automatiquement sur cet appareil. Pensez à faire une sauvegarde de temps en temps avec « Sauvegarder » : vous obtenez un fichier que vous pourrez réimporter sur n'importe quel appareil.</p>
+  </div>
+  <div class="dlg-foot">
+    <div class="left">
+      <button class="btn" type="button" id="btnBackup">Sauvegarder</button>
+      <label class="btn" id="btnImport" for="importFile" tabindex="0" role="button">Importer</label>
+      <input type="file" id="importFile" class="vh" accept=".json,application/json" tabindex="-1">
+    </div>
+    <button class="btn ghost danger" type="button" id="btnClearHist">Tout effacer</button>
+  </div>
+</dialog>
+
+<div class="voicebar" id="voiceBar" hidden role="status" aria-live="polite">
+  <span class="vdot" aria-hidden="true"></span>
+  <span id="voiceStatus" class="vstatus">Mode vocal</span>
+  <label class="vreader">Voix de <select id="voiceReader" aria-label="IA lue à voix haute"></select></label>
+  <button class="btn primary" id="vTalk" type="button" hidden>🎤 Parler</button>
+  <button class="btn" id="vSkip" type="button" hidden>Passer</button>
+  <button class="btn" id="vStop" type="button">Quitter</button>
+</div>
+<div class="lightbox" id="lightbox" hidden><img id="lightboxImg" alt="Image agrandie"><p>Appui long sur l'image → « Ajouter à Photos » · Touchez à côté pour fermer</p></div>
+<div class="toast" id="toast" hidden></div>
+<div id="printArea"></div>
+
+<script>
+// ================= Stockage =================
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem('trIA.'+k); return v===null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem('trIA.'+k, JSON.stringify(v)); return true; }catch(e){ return false; } }
+};
+
+// Base de données du navigateur (IndexedDB) : grande capacité, pour les conversations
+const DB = {
+  db: null,
+  open(){
+    if (this.db) return Promise.resolve(this.db);
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('tableRondeIA', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('threads', { keyPath:'id' });
+      r.onsuccess = () => { this.db = r.result; res(this.db); };
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async run(mode, fn){
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const t = db.transaction('threads', mode); const req = fn(t.objectStore('threads'));
+      t.oncomplete = () => res(req ? req.result : undefined);
+      t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+    });
+  }
+};
+const Hist = {
+  async all(){ try { return await DB.run('readonly', s => s.getAll()); } catch(e){ return Object.values(store.get('threadsFallback', {})); } },
+  async put(th){
+    try { await DB.run('readwrite', s => s.put(th)); return true; }
+    catch(e){ const m = store.get('threadsFallback', {}); m[th.id] = th; return store.set('threadsFallback', m); }
+  },
+  async del(id){ try { await DB.run('readwrite', s => s.delete(id)); } catch(e){} const m = store.get('threadsFallback', {}); if (m[id]){ delete m[id]; store.set('threadsFallback', m); } },
+  async clear(){ try { await DB.run('readwrite', s => s.clear()); } catch(e){} store.set('threadsFallback', {}); }
+};
+let persistAsked = false;
+function askPersist(){ if (persistAsked) return; persistAsked = true; try { navigator.storage?.persist?.().catch(()=>{}); } catch(e){} }
+
+// ================= Réseau =================
+async function check(r){
+  if (r.ok) return;
+  let detail = '';
+  try { const j = await r.json(); detail = j.error?.message || j.message || j.detail || JSON.stringify(j); } catch(e){}
+  const hints = {
+    400:'Requête refusée par le fournisseur.',
+    401:'Clé API invalide ou expirée. Vérifiez-la dans « Réglages ».',
+    402:'Crédit API épuisé. Rechargez votre compte API chez ce fournisseur.',
+    403:'Accès refusé pour cette clé ou ce modèle.',
+    404:'Modèle introuvable. Touchez ↻ pour charger la liste des modèles disponibles.',
+    429:'Limite atteinte ou crédit API épuisé. Attendez un peu ou rechargez votre compte API.',
+    500:'Erreur côté fournisseur. Réessayez dans un instant.',
+    529:'Service surchargé. Réessayez dans un instant.'
+  };
+  throw new Error((hints[r.status] || ('Erreur '+r.status)) + (detail ? '\n\nDétail : '+detail : ''));
+}
+async function readSSE(resp, onData){
+  const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = '';
+  while (true){
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream:true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0){
+      const line = buf.slice(0, i).replace(/\r$/, ''); buf = buf.slice(i+1);
+      if (!line.startsWith('data:')) continue;
+      const d = line.slice(5).trim();
+      if (d === '[DONE]') return;
+      let j; try { j = JSON.parse(d); } catch(e){ continue; }
+      onData(j);
+    }
+  }
+}
+// Conversation générique : [{ role:'user'|'assistant', text, atts:[{type:'image'|'pdf', mime, name, data}] }]
+const dataURL = a => `data:${a.mime};base64,${a.data}`;
+const toOpenAI = convo => convo.map(m => {
+  if (m.role === 'assistant' || !m.atts?.length) return { role:m.role, content:m.text };
+  return { role:'user', content:[ { type:'text', text:m.text }, ...m.atts.map(a => a.type === 'image'
+    ? { type:'image_url', image_url:{ url:dataURL(a) } }
+    : { type:'file', file:{ filename:a.name, file_data:dataURL(a) } }) ] };
+});
+const toMistral = convo => convo.map(m => {
+  if (m.role === 'assistant' || !m.atts?.length) return { role:m.role, content:m.text };
+  return { role:'user', content:[ { type:'text', text:m.text }, ...m.atts.map(a => a.type === 'image'
+    ? { type:'image_url', image_url:dataURL(a) }
+    : { type:'document_url', document_url:dataURL(a), document_name:a.name }) ] };
+});
+const toAnthropic = convo => convo.map(m => {
+  if (m.role === 'assistant' || !m.atts?.length) return { role:m.role, content:m.text };
+  return { role:'user', content:[ ...m.atts.map(a => a.type === 'image'
+    ? { type:'image', source:{ type:'base64', media_type:a.mime, data:a.data } }
+    : { type:'document', source:{ type:'base64', media_type:'application/pdf', data:a.data } }), { type:'text', text:m.text } ] };
+});
+const toGemini = convo => convo.map(m => ({
+  role: m.role === 'assistant' ? 'model' : 'user',
+  parts: [ ...(m.role === 'user' ? (m.atts||[]).map(a => ({ inline_data:{ mime_type:a.mime, data:a.data } })) : []), { text:m.text } ]
+}));
+
+const toOpenAIResponses = convo => convo.map(m => {
+  if (m.role === 'assistant') return { role:'assistant', content:m.text };
+  return { role:'user', content:[ { type:'input_text', text:m.text }, ...(m.atts||[]).map(a => a.type === 'image'
+    ? { type:'input_image', image_url:dataURL(a) }
+    : { type:'input_file', filename:a.name, file_data:dataURL(a) }) ] };
+});
+async function openAIWebSearch(key, model, convo, signal, onText, opts){
+  const r = await fetch('https://api.openai.com/v1/responses', { method:'POST', signal,
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+key },
+    body: JSON.stringify({ model, stream:true, input:toOpenAIResponses(convo), tools:[{ type:'web_search', user_location:{ type:'approximate', country:'FR' } }], ...(opts.system ? { instructions:opts.system } : {}) }) });
+  await check(r);
+  await readSSE(r, d => {
+    const t = d.type || '';
+    if (t === 'error') throw new Error(d.message || d.error?.message || 'Erreur');
+    if (t === 'response.failed') throw new Error(d.response?.error?.message || 'Échec de la réponse');
+    if (t.startsWith('response.web_search_call') && t.endsWith('searching')) opts.onStatus?.('Recherche web');
+    if (t === 'response.output_text.delta' && d.delta) onText(d.delta);
+    if (t === 'response.output_text.annotation.added' && d.annotation?.url) opts.onSource?.({ url:d.annotation.url, title:d.annotation.title });
+    if (t === 'response.completed'){
+      for (const item of d.response?.output || []) for (const c of item.content || []) for (const a of c.annotations || []) if (a.url) opts.onSource?.({ url:a.url, title:a.title });
+    }
+  });
+}
+function openAIStyle(url, convert, webSearch){
+  return {
+    async stream(key, model, convo, signal, onText, opts = {}){
+      if (opts.web && webSearch) return webSearch(key, model, convo, signal, onText, opts);
+      const r = await fetch(url+'/chat/completions', { method:'POST', signal,
+        headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+key },
+        body: JSON.stringify({ model, stream:true, messages:[ ...(opts.system ? [{ role:'system', content:opts.system }] : []), ...convert(convo) ] }) });
+      await check(r);
+      await readSSE(r, d => { if (d.error) throw new Error(d.error.message||'Erreur'); const t = d.choices?.[0]?.delta?.content; if (t) onText(t); });
+    },
+    async models(key){
+      const r = await fetch(url+'/models', { headers:{ 'Authorization':'Bearer '+key } });
+      await check(r); const j = await r.json(); return j.data.map(m => m.id);
+    }
+  };
+}
+
+// ================= Fournisseurs =================
+const PROVIDERS = [
+  { id:'openai', name:'ChatGPT', vendor:'OpenAI', model:'gpt-5', keyUrl:'https://platform.openai.com/api-keys', ph:'sk-…',
+    ...openAIStyle('https://api.openai.com/v1', toOpenAI, openAIWebSearch), webSearch:true,
+    filter: ids => ids.filter(id => /^(gpt-|o\d|chatgpt)/.test(id) && !/(audio|realtime|transcribe|tts|image|search|embedding)/.test(id)).sort().reverse() },
+  { id:'anthropic', name:'Claude', vendor:'Anthropic', model:'claude-sonnet-5-5', keyUrl:'https://console.anthropic.com/settings/keys', ph:'sk-ant-…',
+    webSearch:true,
+    async stream(key, model, convo, signal, onText, opts = {}){
+      const body = { model, max_tokens:8192, stream:true, messages:toAnthropic(convo) };
+      if (opts.system) body.system = opts.system;
+      if (opts.web) body.tools = [{ type:'web_search_20250305', name:'web_search', max_uses:5, user_location:{ type:'approximate', country:'FR', timezone:'Europe/Paris' } }];
+      const r = await fetch('https://api.anthropic.com/v1/messages', { method:'POST', signal,
+        headers:{ 'Content-Type':'application/json', 'x-api-key':key, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+        body: JSON.stringify(body) });
+      await check(r);
+      let lastWasSearch = false;
+      await readSSE(r, d => {
+        if (d.type === 'error') throw new Error(d.error?.message || 'Erreur');
+        if (d.type === 'content_block_start'){
+          const b = d.content_block || {};
+          if (b.type === 'server_tool_use'){ opts.onStatus?.('Recherche web'); lastWasSearch = true; }
+          if (b.type === 'web_search_tool_result' && Array.isArray(b.content)) b.content.forEach(x => x.url && opts.onSeen?.({ url:x.url, title:x.title }));
+          if (b.type === 'text' && lastWasSearch){ opts.onStatus?.('En cours'); lastWasSearch = false; }
+        }
+        if (d.type === 'content_block_delta' && d.delta?.type === 'text_delta') onText(d.delta.text);
+        if (d.type === 'content_block_delta' && d.delta?.type === 'citations_delta' && d.delta.citation?.url) opts.onSource?.({ url:d.delta.citation.url, title:d.delta.citation.title });
+      });
+    },
+    async models(key){
+      const r = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers:{ 'x-api-key':key, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' } });
+      await check(r); const j = await r.json(); return j.data.map(m => m.id);
+    }, filter: ids => ids },
+  { id:'gemini', name:'Gemini', vendor:'Google', model:'gemini-3.8-flash', keyUrl:'https://aistudio.google.com/apikey', ph:'AIza…',
+    webSearch:true,
+    async stream(key, model, convo, signal, onText, opts = {}){
+      const body = { contents:toGemini(convo) };
+      if (opts.system) body.systemInstruction = { parts:[{ text:opts.system }] };
+      if (opts.web) body.tools = [{ google_search:{} }];
+      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':streamGenerateContent?alt=sse', { method:'POST', signal,
+        headers:{ 'Content-Type':'application/json', 'x-goog-api-key':key },
+        body: JSON.stringify(body) });
+      await check(r);
+      await readSSE(r, d => {
+        if (d.error) throw new Error(d.error.message || 'Erreur');
+        const cand = d.candidates?.[0];
+        for (const p of (cand?.content?.parts || [])) if (p.text && !p.thought) onText(p.text);
+        for (const c of (cand?.groundingMetadata?.groundingChunks || [])) if (c.web?.uri) opts.onSource?.({ url:c.web.uri, title:c.web.title || c.web.domain });
+      });
+    },
+    async models(key){
+      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers:{ 'x-goog-api-key':key } });
+      await check(r); const j = await r.json();
+      return (j.models||[]).filter(m => (m.supportedGenerationMethods||[]).includes('generateContent')).map(m => m.name.replace('models/',''));
+    }, filter: ids => ids.filter(id => /^gemini/.test(id) && !/(embedding|tts|image|live)/.test(id)).sort().reverse() },
+  { id:'mistral', name:'Le Chat', vendor:'Mistral', model:'mistral-large-latest', keyUrl:'https://console.mistral.ai/api-keys', ph:'…',
+    ...openAIStyle('https://api.mistral.ai/v1', toMistral), webSearch:false,
+    filter: ids => [...new Set(ids)].filter(id => !/(embed|moderation|ocr|transcribe)/.test(id)).sort() }
+];
+const P = Object.fromEntries(PROVIDERS.map(p => [p.id, p]));
+
+// ================= État =================
+let keys = store.get('keys', {});
+let enabled = store.get('enabled', { openai:true, anthropic:true, gemini:true, mistral:true });
+let models = store.get('models', {});
+if (models.gemini === 'gemini-2.5-flash') delete models.gemini;
+const runs = {};
+const pending = new Set();
+let memory = store.get('memory', '');
+let projects = store.get('projects', []);
+let activeProject = store.get('activeProject', null);
+let thread = newThread();
+
+function uid(){ try { return crypto.randomUUID(); } catch(e){ return Date.now().toString(36)+Math.random().toString(36).slice(2); } }
+function newThread(){ return { id:uid(), title:'', created:Date.now(), updated:Date.now(), turns:[], project:(typeof activeProject !== 'undefined' && activeProject && projects.some(x => x.id === activeProject)) ? activeProject : null }; }
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+function md(text){
+  if (window.marked && window.DOMPurify){ try { return DOMPurify.sanitize(marked.parse(text || '')); } catch(e){} }
+  return '<p style="white-space:pre-wrap">'+esc(text)+'</p>';
+}
+const fmtDate = t => new Date(t).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' });
+function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, Math.max(2200, msg.length * 60)); }
+async function copy(text){
+  try { await navigator.clipboard.writeText(text); toast('Copié'); }
+  catch(e){ const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); toast('Copié'); }catch(_){} ta.remove(); }
+}
+function download(name, content, type){
+  const u = URL.createObjectURL(new Blob([content], { type }));
+  const a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 5000);
+}
+const words = s => (s||'').split(/\s+/).filter(Boolean).length;
+function metaText(r){
+  if (!r) return '';
+  let s = `${r.model} · ${((r.ms||0)/1000).toFixed(1)} s`;
+  if (r.text && !r.error) s += ` · ${words(r.text)} mots`;
+  if (r.image && r.images?.length) s += r.edit ? ' · image retouchée' : ' · image';
+  if (r.web) s += ' · web';
+  if (r.noweb) s += ' · sans recherche web';
+  if (r.stopped) s += ' · interrompu';
+  return s;
+}
+
+// ================= Sauvegarde =================
+async function saveThread(){
+  if (!thread.turns.length) return;
+  thread.updated = Date.now();
+  const ok = await Hist.put(JSON.parse(JSON.stringify(thread)));
+  store.set('current', thread.id);
+  askPersist();
+  const f = $('#savedFlag');
+  if (ok){ f.hidden = false; f.textContent = 'Enregistré'; scheduleSync(); }
+  else toast('Enregistrement impossible : mémoire du navigateur pleine. Faites une sauvegarde puis supprimez d\'anciennes conversations.');
+}
+
+// ================= Interface =================
+function build(){
+  const toggles = $('#toggles'), grid = $('#grid'), rows = $('#keyRows');
+  for (const p of PROVIDERS){
+    const pc = `--pc:var(--c-${p.id})`;
+    toggles.insertAdjacentHTML('beforeend',
+      `<label class="chip" style="${pc}"><input type="checkbox" id="en-${p.id}" ${enabled[p.id]!==false?'checked':''}><span class="dot"></span>${p.name}</label>`);
+    grid.insertAdjacentHTML('beforeend', `
+      <section class="col" id="col-${p.id}" style="${pc}" aria-label="${p.name}">
+        <div class="col-head">
+          <div class="col-title"><strong>${p.name}</strong><small>${p.vendor}</small><span class="status" id="st-${p.id}">Prêt</span></div>
+          <div class="model-row">
+            <input id="model-${p.id}" list="dl-${p.id}" value="${esc(models[p.id] || p.model)}" aria-label="Modèle ${p.name}" spellcheck="false" autocapitalize="off" autocorrect="off">
+            <datalist id="dl-${p.id}"></datalist>
+            <button class="btn ghost" type="button" data-models="${p.id}" title="Charger la liste des modèles">↻</button>
+          </div>
+        </div>
+        <div class="col-body empty" id="out-${p.id}"></div>
+        <div class="col-foot"><span id="meta-${p.id}">—</span><span class="sp"></span><button class="btn ghost" type="button" data-copy="${p.id}">Copier</button></div>
+      </section>`);
+    rows.insertAdjacentHTML('beforeend', `
+      <div class="keyrow" style="${pc}">
+        <label for="key-${p.id}"><span class="dot"></span>${p.name} <small style="color:var(--muted);font-weight:400">${p.vendor}</small><a href="${p.keyUrl}" target="_blank" rel="noopener">Obtenir une clé ↗</a></label>
+        <input id="key-${p.id}" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="${p.ph}">
+      </div>`);
+    $('#en-'+p.id).addEventListener('change', e => { enabled[p.id] = e.target.checked; store.set('enabled', enabled); renderAll(); });
+    $('#model-'+p.id).addEventListener('change', e => { models[p.id] = e.target.value.trim(); store.set('models', models); });
+  }
+  grid.addEventListener('click', e => {
+    const c = e.target.closest('[data-copy]');
+    if (c){ const id = c.dataset.copy; for (let i = thread.turns.length-1; i >= 0; i--){ const r = thread.turns[i].results[id]; if (r?.text){ copy(r.text); return; } } toast('Rien à copier'); }
+    const m = e.target.closest('[data-models]'); if (m) loadModels(m.dataset.models, m);
+    const x = e.target.closest('[data-exp]'); if (x) exportAnswer(x.dataset.exp, x.dataset.p, +x.dataset.i, x);
+  });
+}
+
+function turnHTML(p, t, i){
+  const r = t.results[p.id]; let ans;
+  if (r) ans = r.error ? `<div class="ans error">${esc(r.error)}</div>`
+    : r.images?.length ? `<div class="ans">${imagesHTML(r, p.id, i)}${r.text ? `<div class="md">${md(r.text)}</div>` : ''}</div>`
+    : `<div class="ans md">${md(r.text)}</div>`;
+  else if (pending.has(p.id) && i === thread.turns.length-1) ans = t.mode === 'image' ? `<div class="ans skip">Création de l'image en cours…</div>` : `<div class="ans md cursor"></div>`;
+  else if (t.mode === 'image' && !p.image) ans = `<div class="ans skip">${esc(p.name)} ne crée pas d'images.</div>`;
+  else ans = `<div class="ans skip">Non interrogé pour ce message.</div>`;
+  const tools = r && r.text && !r.error ? toolsHTML(p.id, i, r.text) : '';
+  return `<article class="turn" id="turn-${p.id}-${i}"><div class="ask">${t.mode === 'image' ? '<div class="imgtag">🎨 création d\'image</div>' : ''}${t.web ? '<div class="webtag">🌐 recherche web</div>' : ''}${attsHTML(t.attachments)}${esc(t.prompt)}</div>${ans}${sourcesHTML(r)}<div class="tmeta">${esc(metaText(r))}</div>${tools}</article>`;
+}
+
+function renderCol(p){
+  const col = $('#col-'+p.id), out = $('#out-'+p.id), on = enabled[p.id] !== false;
+  col.classList.toggle('off', !on);
+  const count = thread.turns.filter(t => t.results[p.id] && !t.results[p.id].error).length;
+  $('#meta-'+p.id).textContent = count ? `${count} réponse${count>1?'s':''}` : '—';
+  if (!thread.turns.length){
+    out.className = 'col-body empty';
+    out.textContent = !keys[p.id] ? 'Ajoutez votre clé API dans « Réglages » pour activer '+p.name+'.'
+                    : on ? 'La réponse de '+p.name+' apparaîtra ici.' : p.name+' est désactivé.';
+    return;
+  }
+  out.className = 'col-body';
+  out.innerHTML = thread.turns.map((t, i) => turnHTML(p, t, i)).join('');
+  out.scrollTop = out.scrollHeight;
+}
+
+function renderAll(){
+  for (const p of PROVIDERS){ renderCol(p); if (!pending.has(p.id)) setStatus(p.id, '', thread.turns.length ? 'Prêt' : 'Prêt'); }
+  const n = thread.turns.length;
+  $('#threadTitle').textContent = thread.title || 'Nouvelle conversation';
+  renderProjSel();
+  $('#threadMeta').textContent = n ? `${n} échange${n>1?'s':''} · ${fmtDate(thread.created)}` : '';
+  $('#expGroup').hidden = !n;
+  $('#savedFlag').hidden = !n;
+}
+
+function setStatus(id, cls, label){ const s = $('#st-'+id); s.className = 'status '+cls; s.textContent = label; }
+
+async function loadModels(id, btn){
+  const p = P[id];
+  if (!keys[id]){ toast('Ajoutez d\'abord la clé '+p.name); return; }
+  btn.disabled = true;
+  try {
+    const list = p.filter(await p.models(keys[id]));
+    $('#dl-'+id).innerHTML = list.map(m => `<option value="${esc(m)}">`).join('');
+    const inp = $('#model-'+id); inp.value = ''; inp.focus();
+    toast(list.length+' modèles disponibles pour '+p.name);
+  } catch(e){ toast('Liste indisponible : '+String(e.message).split('\n')[0]); }
+  btn.disabled = false;
+}
+
+// ================= Envoi =================
+function priorMessages(id, turns){
+  const msgs = [];
+  for (const t of turns){
+    const r = t.results[id];
+    if (r && !r.error && r.text) msgs.push({ role:'user', text:t.prompt, atts:t.attachments||[] }, { role:'assistant', text:r.text });
+  }
+  return msgs;
+}
+
+async function runOne(p, turn, idx, prior){
+  const out = $('#out-'+p.id);
+  const el = document.querySelector(`#turn-${p.id}-${idx} .ans`);
+  const metaEl = document.querySelector(`#turn-${p.id}-${idx} .tmeta`);
+  const model = $('#model-'+p.id).value.trim() || p.model;
+  const ctrl = new AbortController(); runs[p.id] = ctrl;
+  const res = { model, text:'', ms:0, error:null };
+  const useWeb = !!turn.web && !!p.webSearch;
+  if (useWeb) res.web = true; else if (turn.web) res.noweb = true;
+  const srcMap = new Map(), seen = new Map();
+  const opts = { web:useWeb, system:systemFor(thread),
+    onSource: s => { if (s.url && !srcMap.has(s.url)) srcMap.set(s.url, { url:s.url, title:s.title || '' }); },
+    onSeen: s => { if (s.url && !seen.has(s.url)) seen.set(s.url, { url:s.url, title:s.title || '' }); },
+    onStatus: l => setStatus(p.id, 'run', l) };
+  const today = new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  const lastText = useWeb ? `(Nous sommes le ${today}. Cite tes sources.)\n\n${turn.prompt}` : turn.prompt;
+  const t0 = performance.now();
+  let frame = 0;
+  const paint = () => { frame = 0; const stick = out.scrollHeight - out.scrollTop - out.clientHeight < 80; el.innerHTML = md(res.text); if (stick) out.scrollTop = out.scrollHeight; };
+  setStatus(p.id, 'run', 'En cours');
+  try {
+    await p.stream(keys[p.id], model, [...prior, { role:'user', text:lastText, atts:turn.attachments||[] }], ctrl.signal, t => {
+      res.text += t; if (!frame) frame = requestAnimationFrame(paint);
+    }, opts);
+    paint();
+    setStatus(p.id, 'done', 'Terminé');
+    if (!res.text) el.innerHTML = '<p style="color:var(--muted)">Réponse vide.</p>';
+  } catch(e){
+    if (e.name === 'AbortError'){
+      res.stopped = true; setStatus(p.id, '', 'Arrêté');
+      if (res.text) paint(); else { res.error = 'Interrompu avant la réponse.'; el.className = 'ans error'; el.textContent = res.error; }
+    } else {
+      res.error = e instanceof TypeError ? 'Connexion impossible avec '+p.vendor+'. Vérifiez votre connexion internet et réessayez.' : e.message;
+      el.className = 'ans error'; el.textContent = res.error; setStatus(p.id, 'err', 'Erreur');
+    }
+  } finally {
+    el.classList.remove('cursor');
+    res.ms = performance.now() - t0;
+    turn.results[p.id] = res;
+    pending.delete(p.id);
+    const srcs = [...srcMap.values()];
+    if (useWeb) res.sources = (srcs.length ? srcs : [...seen.values()]).slice(0, 12);
+    if (res.sources?.length && !res.error) metaEl.insertAdjacentHTML('beforebegin', sourcesHTML(res));
+    metaEl.textContent = metaText(res);
+    if (res.text && !res.error) metaEl.insertAdjacentHTML('afterend', toolsHTML(p.id, idx, res.text));
+    const count = thread.turns.filter(t => t.results[p.id] && !t.results[p.id].error).length;
+    $('#meta-'+p.id).textContent = count ? `${count} réponse${count>1?'s':''}` : '—';
+    await saveThread();
+  }
+}
+
+async function send(){
+  if (pending.size) return;
+  const ta = $('#prompt'); let prompt = ta.value.trim();
+  if (!prompt && !pendingAtts.length){ ta.focus(); return; }
+  const imgMode = $('#imgToggle').checked;
+  if (!prompt) prompt = imgMode ? 'Améliore cette image en gardant son sujet.' : pendingAtts.length > 1 ? 'Analyse ces fichiers et décris leur contenu en détail.' : 'Analyse ce fichier et décris son contenu en détail.';
+  let targets = PROVIDERS.filter(p => enabled[p.id] !== false && keys[p.id]);
+  if (!targets.length){ toast('Ajoutez au moins une clé API'); openSettings(); return; }
+  if (imgMode){ targets = targets.filter(p => p.image); if (!targets.length){ toast('Pour créer des images, cochez ChatGPT ou Gemini et ajoutez leur clé API.'); return; } }
+  const prev = thread.turns.slice();
+  const atts = pendingAtts.splice(0); renderAttach();
+  const turn = { prompt, date:Date.now(), results:{}, attachments:atts, web: imgMode ? false : $('#webToggle').checked, ...(imgMode ? { mode:'image', size:$('#imgSize').value } : {}) };
+  thread.turns.push(turn);
+  if (!thread.title) thread.title = (ta.value.trim() ? prompt : (atts[0]?.name || prompt)).replace(/\s+/g, ' ').slice(0, 90);
+  targets.forEach(p => pending.add(p.id));
+  ta.value = ''; store.set('draft', '');
+  renderAll();
+  await saveThread();
+  $('#btnSend').disabled = true; $('#btnStop').hidden = false; $('#btnNew').disabled = true;
+  const idx = thread.turns.length - 1;
+  await Promise.allSettled(targets.map(p => imgMode ? runImage(p, turn, idx, prev) : runOne(p, turn, idx, priorMessages(p.id, prev))));
+  $('#btnSend').disabled = false; $('#btnStop').hidden = true; $('#btnNew').disabled = false;
+}
+
+function threadToMarkdown(th){
+  let s = `# ${th.title || 'Conversation'}\n\n_${fmtDate(th.created)}_\n\n`;
+  th.turns.forEach((t, i) => {
+    s += `---\n\n## Question ${i+1}\n\n${t.prompt}\n\n`;
+    if (t.attachments?.length) s += `_Fichiers joints : ${t.attachments.map(a => a.name).join(', ')}_\n\n`;
+    for (const p of PROVIDERS){
+      const r = t.results[p.id]; if (!r) continue;
+      s += `### ${p.name} (${r.model})\n\n${r.error ? '_Erreur : '+r.error+'_' : r.text}\n\n` + sourcesMd(r);
+    }
+  });
+  return s;
+}
+
+// ================= Historique =================
+async function renderHistory(){
+  const q = $('#histSearch').value.trim().toLowerCase();
+  const pf = $('#histProj').value;
+  let list = (await Hist.all()).sort((a, b) => b.updated - a.updated);
+  if (pf === '__none') list = list.filter(th => !th.project || !projects.some(p => p.id === th.project));
+  else if (pf) list = list.filter(th => th.project === pf);
+  if (q) list = list.filter(th => (th.title||'').toLowerCase().includes(q) ||
+    th.turns.some(t => t.prompt.toLowerCase().includes(q) || (t.attachments||[]).some(a => a.name.toLowerCase().includes(q)) || Object.values(t.results).some(r => (r.text||'').toLowerCase().includes(q))));
+  const ul = $('#histList');
+  if (!list.length){ ul.innerHTML = `<li class="note">${q ? 'Aucune conversation ne correspond.' : 'Vos conversations apparaîtront ici.'}</li>`; return; }
+  ul.innerHTML = list.map(th => {
+    const n = th.turns.length;
+    return `<li><button type="button" class="open${th.id===thread.id?' current':''}" data-open="${esc(th.id)}"><b>${th.project && projName(th.project) ? `<span class="ptag">📁 ${esc(projName(th.project))}</span>` : ''}${esc(th.title || 'Sans titre')}</b><small>${fmtDate(th.updated)} · ${n} échange${n>1?'s':''}</small></button>
+      <button type="button" class="btn ghost danger" data-del="${esc(th.id)}" aria-label="Supprimer">Supprimer</button></li>`;
+  }).join('');
+}
+
+$('#histList').addEventListener('click', async e => {
+  const o = e.target.closest('[data-open]');
+  if (o){
+    if (pending.size){ toast('Attendez la fin des réponses en cours'); return; }
+    const th = (await Hist.all()).find(x => x.id === o.dataset.open);
+    if (th){ thread = th; store.set('current', th.id); renderAll(); $('#dlgHistory').close(); }
+    return;
+  }
+  const d = e.target.closest('[data-del]');
+  if (d){
+    if (d.dataset.armed !== '1'){ d.dataset.armed = '1'; d.textContent = 'Confirmer'; setTimeout(() => { if (d.isConnected){ d.dataset.armed = ''; d.textContent = 'Supprimer'; } }, 3000); return; }
+    await Hist.del(d.dataset.del); syncDelete(d.dataset.del);
+    if (d.dataset.del === thread.id && !pending.size){ thread = newThread(); store.set('current', null); renderAll(); }
+    toast('Conversation supprimée'); renderHistory();
+  }
+});
+$('#histSearch').addEventListener('input', () => { clearTimeout(renderHistory.h); renderHistory.h = setTimeout(renderHistory, 150); });
+async function openHistory(pf = ''){
+  $('#histProj').innerHTML = `<option value="">Tous les projets</option><option value="__none">Sans projet</option>` + projects.map(p => `<option value="${esc(p.id)}">📁 ${esc(p.name)}</option>`).join('');
+  $('#histProj').value = pf; $('#histSearch').value = '';
+  await renderHistory(); if (!$('#dlgHistory').open) $('#dlgHistory').showModal();
+}
+$('#btnHistory').onclick = () => openHistory('');
+$('#histProj').addEventListener('change', renderHistory);
+$('#btnCloseHist').onclick = () => $('#dlgHistory').close();
+
+let clearArmed = false;
+$('#btnClearHist').onclick = async e => {
+  if (!clearArmed){ clearArmed = true; e.target.textContent = 'Confirmer l\'effacement ?'; setTimeout(() => { clearArmed = false; e.target.textContent = 'Tout effacer'; }, 3500); return; }
+  clearArmed = false; e.target.textContent = 'Tout effacer';
+  const ids = (await Hist.all()).map(t => t.id);
+  await Hist.clear(); for (const id of ids) await syncDelete(id);
+  if (!pending.size){ thread = newThread(); store.set('current', null); renderAll(); }
+  renderHistory(); toast('Historique effacé');
+};
+
+$('#btnBackup').onclick = async () => {
+  const all = await Hist.all();
+  if (!all.length){ toast('Aucune conversation à sauvegarder'); return; }
+  const d = new Date().toISOString().slice(0, 10);
+  download(`table-ronde-sauvegarde-${d}.json`, JSON.stringify({ app:'table-ronde-ia', version:2, exported:Date.now(), threads:all }), 'application/json');
+  toast(all.length+' conversation'+(all.length>1?'s':'')+' sauvegardée'+(all.length>1?'s':''));
+};
+$('#importFile').onchange = async e => {
+  const f = e.target.files?.[0]; e.target.value = ''; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    const list = (Array.isArray(data) ? data : data.threads || []).filter(th => th && th.id && Array.isArray(th.turns));
+    for (const th of list){ th.updated = th.updated || Date.now(); await Hist.put(th); }
+    scheduleSync(500);
+    toast(list.length+' conversation'+(list.length>1?'s':'')+' importée'+(list.length>1?'s':''));
+    renderHistory();
+  } catch(err){ toast('Fichier illisible : choisissez un fichier de sauvegarde Table ronde (.json).'); }
+};
+
+$('#btnExpWord').onclick = async e => {
+  const b = e.currentTarget; b.disabled = true; b.textContent = '…';
+  try { download(slug(thread.title || 'conversation')+'.docx', await htmlToDocxBlob(threadHTML(thread)), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'); }
+  catch(err){ toast(err.message || 'Export impossible'); }
+  b.disabled = false; b.textContent = 'Word';
+};
+$('#btnExpPdf').onclick = () => printHTML(threadHTML(thread));
+$('#btnExportMd').onclick = () => {
+  const name = (thread.title || 'conversation').toLowerCase().replace(/[^a-z0-9àâäéèêëîïôöùûüç]+/gi, '-').slice(0, 50).replace(/^-|-$/g, '');
+  download(`${name || 'conversation'}.md`, threadToMarkdown(thread), 'text/markdown');
+};
+
+// ================= Nouvelle conversation, clés, saisie =================
+$('#btnNew').onclick = () => { if (pending.size) return; thread = newThread(); store.set('current', null); renderAll(); $('#prompt').focus(); };
+
+function openSettings(){ for (const p of PROVIDERS) $('#key-'+p.id).value = keys[p.id] || '';
+  $('#imgQuality').value = imgCfg.quality; $('#imgModelOpenai').value = imgCfg.openai; $('#imgModelGemini').value = imgCfg.gemini;
+  $('#setMemory').value = memory; $('#syncRepo').value = syncCfg.repo || ''; $('#syncToken').value = syncCfg.token || ''; $('#syncTestMsg').hidden = true; try { fillVoiceSettings(); } catch(e){} $('#dlgSettings').showModal(); }
+$('#btnSettings').onclick = openSettings;
+$('#dlgSettings').addEventListener('close', () => {
+  if ($('#dlgSettings').returnValue !== 'save') return;
+  for (const p of PROVIDERS){ const v = $('#key-'+p.id).value.trim(); if (v) keys[p.id] = v; else delete keys[p.id]; }
+  voiceCfg.voiceURI = $('#setVoice').value; voiceCfg.rate = +$('#setRate').value; store.set('voice', voiceCfg);
+  imgCfg = { quality:$('#imgQuality').value, openai:$('#imgModelOpenai').value.trim() || 'gpt-image-1', gemini:$('#imgModelGemini').value.trim() || 'gemini-2.5-flash-image' };
+  store.set('imgCfg', imgCfg);
+  const mem = $('#setMemory').value;
+  if (mem !== memory){ memory = mem; store.set('memory', memory); metaTouch(); }
+  const nc = { repo:$('#syncRepo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$|\/$/g, ''), token:$('#syncToken').value.trim() };
+  if (nc.repo !== syncCfg.repo || nc.token !== syncCfg.token){
+    if (nc.repo !== syncCfg.repo) syncState = { threads:{}, meta:null };
+    syncCfg = nc; store.set('sync', syncCfg); saveSyncState(); syncNow();
+  }
+  store.set('keys', keys); renderAll(); toast('Réglages enregistrés');
+});
+
+$('#composer').addEventListener('submit', e => { e.preventDefault(); send(); });
+$('#prompt').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); send(); } });
+$('#prompt').addEventListener('input', e => { clearTimeout(send.d); send.d = setTimeout(() => store.set('draft', e.target.value), 400); });
+$('#btnStop').onclick = () => { for (const id in runs) runs[id]?.abort(); };
+
+
+// ================= Pièces jointes =================
+let pendingAtts = [];
+const MAX_PDF = 20 * 1024 * 1024, MAX_TOTAL = 30 * 1024 * 1024, MAX_FILES = 10;
+const fmtSize = n => n > 1048576 ? (n/1048576).toFixed(1)+' Mo' : Math.max(1, Math.round(n/1024))+' Ko';
+const readB64 = file => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(r.error); r.readAsDataURL(file); });
+async function shrinkImage(file){
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    const w = img.naturalWidth, h = img.naturalHeight, scale = Math.min(1, 1600 / Math.max(w, h));
+    if (scale === 1 && /^image\/(png|jpeg|webp|gif)$/.test(file.type) && file.size < 3.5*1024*1024)
+      return { mime:file.type, data:await readB64(file) };
+    const c = document.createElement('canvas'); c.width = Math.round(w*scale); c.height = Math.round(h*scale);
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+    return { mime:'image/jpeg', data:c.toDataURL('image/jpeg', 0.86).split(',')[1] };
+  } catch(e){
+    if (/^image\/(png|jpeg|webp|gif)$/.test(file.type)) return { mime:file.type, data:await readB64(file) };
+    throw new Error('Image illisible : '+file.name+'. Essayez une capture d\'écran ou une photo au format JPEG.');
+  } finally { URL.revokeObjectURL(url); }
+}
+async function addFiles(files){
+  for (const f of files){
+    if (pendingAtts.length >= MAX_FILES){ toast('Maximum '+MAX_FILES+' fichiers par message'); break; }
+    try {
+      let att;
+      if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)){
+        if (f.size > MAX_PDF){ toast(f.name+' dépasse 20 Mo. Choisissez un PDF plus léger.'); continue; }
+        att = { type:'pdf', mime:'application/pdf', name:f.name, data:await readB64(f), size:f.size };
+      } else if (f.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(f.name)){
+        const { mime, data } = await shrinkImage(f);
+        att = { type:'image', mime, name:f.name || 'image.jpg', data, size:Math.round(data.length*0.75) };
+      } else { toast(f.name+' : format non pris en charge. Choisissez une image ou un PDF.'); continue; }
+      const total = pendingAtts.reduce((s, a) => s + a.size, 0) + att.size;
+      if (total > MAX_TOTAL){ toast('Fichiers trop lourds au total (30 Mo maximum).'); continue; }
+      pendingAtts.push(att);
+    } catch(e){ toast(e.message); }
+  }
+  renderAttach();
+}
+function renderAttach(){
+  const row = $('#attachRow');
+  row.hidden = !pendingAtts.length;
+  row.innerHTML = pendingAtts.map((a, i) => `<div class="att">${a.type === 'image' ? `<img src="${dataURL(a)}" alt="">` : '<span class="pdf">PDF</span>'}
+    <span class="nm">${esc(a.name)}<small>${fmtSize(a.size)}</small></span>
+    <button type="button" data-rm="${i}" aria-label="Retirer ${esc(a.name)}">✕</button></div>`).join('');
+}
+function attsHTML(atts){
+  if (!atts?.length) return '';
+  return '<div class="atts">' + atts.map(a => a.type === 'image'
+    ? `<img src="${dataURL(a)}" alt="${esc(a.name)}" title="${esc(a.name)}">`
+    : `<span class="pdfb" title="${esc(a.name)}">📄 ${esc(a.name)}</span>`).join('') + '</div>';
+}
+$('#btnAttach').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#attachFile').click(); } });
+const onPick = e => { const fs = [...(e.target.files||[])]; if (!fs.length) return; e.target.value = ''; toast('Préparation de '+fs.length+' fichier'+(fs.length>1?'s':'')+'…'); addFiles(fs); };
+$('#attachFile').addEventListener('change', onPick);
+$('#attachFile').addEventListener('input', e => { if (e.target.files?.length) onPick(e); });
+$('#attachRow').addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (b){ pendingAtts.splice(+b.dataset.rm, 1); renderAttach(); } });
+$('#prompt').addEventListener('paste', e => {
+  const cd = e.clipboardData; if (!cd) return;
+  let fs = [...(cd.files || [])];
+  if (!fs.length) fs = [...(cd.items || [])].filter(it => it.kind === 'file').map(it => it.getAsFile()).filter(Boolean);
+  fs = fs.filter(f => f.type.startsWith('image/') || f.type === 'application/pdf');
+  if (fs.length){ e.preventDefault(); addFiles(fs.map((f, i) => f.name ? f : new File([f], 'capture-'+(i+1)+'.png', { type:f.type }))); }
+});
+const comp = $('#composer');
+comp.addEventListener('dragover', e => { if ([...e.dataTransfer.types].includes('Files')){ e.preventDefault(); comp.classList.add('drag'); } });
+comp.addEventListener('dragleave', e => { if (!comp.contains(e.relatedTarget)) comp.classList.remove('drag'); });
+comp.addEventListener('drop', e => { if (e.dataTransfer.files?.length){ e.preventDefault(); comp.classList.remove('drag'); addFiles([...e.dataTransfer.files]); } });
+
+// ================= Export de fichiers =================
+const LIBS = {
+  jszip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+  xlsx: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+};
+const libCache = {};
+function loadLib(name){
+  if (libCache[name]) return libCache[name];
+  return libCache[name] = new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = LIBS[name];
+    s.onload = () => res(); s.onerror = () => { delete libCache[name]; rej(new Error('Chargement impossible. Vérifiez votre connexion internet.')); };
+    document.head.appendChild(s);
+  });
+}
+const slug = s => (s || 'document').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'document';
+
+// ---- Conversion HTML -> Word (.docx) ----
+const xe = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c])).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+function runsOf(node, fmt = {}){
+  let out = '';
+  for (const n of node.childNodes){
+    if (n.nodeType === 3){
+      const t = n.nodeValue.replace(/\s+/g, ' ');
+      if (!t) continue;
+      let rp = '';
+      if (fmt.code) rp += '<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New"/>';
+      if (fmt.b) rp += '<w:b/>';
+      if (fmt.i) rp += '<w:i/>';
+      if (fmt.u) rp += '<w:u w:val="single"/>';
+      if (fmt.color) rp += `<w:color w:val="${fmt.color}"/>`;
+      if (fmt.sz) rp += `<w:sz w:val="${fmt.sz}"/><w:szCs w:val="${fmt.sz}"/>`;
+      out += `<w:r>${rp ? '<w:rPr>'+rp+'</w:rPr>' : ''}<w:t xml:space="preserve">${xe(t)}</w:t></w:r>`;
+    } else if (n.nodeType === 1){
+      const tag = n.tagName.toLowerCase();
+      if (tag === 'br'){ out += '<w:r><w:br/></w:r>'; continue; }
+      if (['ul','ol','table','pre'].includes(tag)) continue;
+      const f = { ...fmt };
+      if (tag === 'strong' || tag === 'b') f.b = true;
+      if (tag === 'em' || tag === 'i') f.i = true;
+      if (tag === 'code') f.code = true;
+      if (tag === 'a'){ f.u = true; f.color = '2F45C9'; }
+      out += runsOf(n, f);
+    }
+  }
+  return out;
+}
+function para(runs, pPr = ''){ return `<w:p>${pPr ? '<w:pPr>'+pPr+'</w:pPr>' : ''}${runs}</w:p>`; }
+function blocksOf(node, ctx = { level:0 }){
+  let out = '';
+  for (const n of node.childNodes){
+    if (n.nodeType === 3){ if (n.nodeValue.trim()) out += para(runsOf({ childNodes:[n] }, ctx.fmt)); continue; }
+    if (n.nodeType !== 1) continue;
+    const tag = n.tagName.toLowerCase();
+    const h = /^h([1-6])$/.exec(tag);
+    if (h){
+      const sz = [36, 30, 26, 24, 22, 22][h[1]-1];
+      out += para(runsOf(n, { b:true, sz, color:'1F2430' }), `<w:keepNext/><w:spacing w:before="240" w:after="120"/>`);
+    } else if (tag === 'p'){
+      out += para(runsOf(n, ctx.fmt), ctx.level ? `<w:ind w:left="${720*ctx.level}"/>` : '');
+    } else if (tag === 'ul' || tag === 'ol'){
+      let k = 0;
+      for (const li of n.children){
+        if (li.tagName.toLowerCase() !== 'li') continue;
+        k++;
+        const bullet = tag === 'ol' ? `${k}.` : '•';
+        const lead = `<w:r><w:t xml:space="preserve">${bullet}\t</w:t></w:r>`;
+        const left = 720 * (ctx.level + 1);
+        // texte direct du <li> (et des <p> qu'il contient)
+        const inline = document.createElement('div');
+        for (const c of li.childNodes){ const t = c.nodeType === 1 ? c.tagName.toLowerCase() : ''; if (t !== 'ul' && t !== 'ol' && t !== 'pre' && t !== 'table') inline.appendChild(c.cloneNode(true)); }
+        inline.querySelectorAll('p').forEach(p => { p.insertAdjacentHTML('afterend', ' '); p.replaceWith(...p.childNodes); });
+        out += para(lead + runsOf(inline, ctx.fmt), `<w:tabs><w:tab w:val="left" w:pos="${left}"/></w:tabs><w:spacing w:after="60"/><w:ind w:left="${left}" w:hanging="360"/>`);
+        for (const c of li.children){ const t = c.tagName.toLowerCase(); if (t === 'ul' || t === 'ol' || t === 'pre' || t === 'table'){ const wrap = document.createElement('div'); wrap.appendChild(c.cloneNode(true)); out += blocksOf(wrap, { ...ctx, level: ctx.level + 1 }); } }
+      }
+    } else if (tag === 'pre'){
+      for (const line of n.textContent.replace(/\n$/, '').split('\n'))
+        out += para(`<w:r><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New"/><w:sz w:val="18"/></w:rPr><w:t xml:space="preserve">${xe(line)}</w:t></w:r>`,
+          `<w:shd w:val="clear" w:color="auto" w:fill="F1F2F5"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>${ctx.level ? `<w:ind w:left="${720*ctx.level}"/>` : ''}`);
+      out += para('');
+    } else if (tag === 'blockquote'){
+      out += blocksOf(n, { level: ctx.level + 1, fmt:{ ...(ctx.fmt||{}), i:true, color:'5B6270' } });
+    } else if (tag === 'hr'){
+      out += para('', '<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="CCCCCC"/></w:pBdr>');
+    } else if (tag === 'table'){
+      const rows = [...n.querySelectorAll('tr')].map(tr => [...tr.children].map(c => ({ el:c, head: c.tagName.toLowerCase() === 'th' })));
+      const cols = Math.max(1, ...rows.map(r => r.length));
+      const w = Math.floor(9638 / cols);
+      let x = `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders>${['top','left','bottom','right','insideH','insideV'].map(b => `<w:${b} w:val="single" w:sz="4" w:space="0" w:color="BFC3CC"/>`).join('')}</w:tblBorders><w:tblCellMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${'<w:gridCol w:w="'+w+'"/>'.repeat(cols)}</w:tblGrid>`;
+      for (const r of rows){
+        x += '<w:tr>';
+        for (let c = 0; c < cols; c++){
+          const cell = r[c];
+          const shade = cell?.head ? '<w:shd w:val="clear" w:color="auto" w:fill="ECEEF3"/>' : '';
+          x += `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${shade}</w:tcPr>${para(cell ? runsOf(cell.el, cell.head ? { b:true } : {}) : '', '<w:spacing w:before="40" w:after="40"/>')}</w:tc>`;
+        }
+        x += '</w:tr>';
+      }
+      out += x + '</w:tbl>' + para('');
+    } else {
+      out += blocksOf(n, ctx);
+    }
+  }
+  return out;
+}
+async function htmlToDocxBlob(html){
+  await loadLib('jszip');
+  const doc = new DOMParser().parseFromString(`<!doctype html><html><body>${html}</body></html>`, 'text/html');
+  const body = blocksOf(doc.body) || para('');
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>');
+  zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+  zip.file('word/_rels/document.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+  zip.file('word/styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="${W}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri" w:eastAsia="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="fr-FR"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`);
+  zip.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="${W}"><w:body>${body}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>`);
+  return zip.generateAsync({ type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
+// ---- Contenus à exporter ----
+const nl2br = s => esc(s).replace(/\n/g, '<br>');
+function answerHTML(p, t, r){
+  return `<h1>${esc(p.name)} — réponse</h1><p><em>${esc(r.model)} · ${fmtDate(t.date)}</em></p><h3>Question</h3><p>${nl2br(t.prompt)}</p>`
+    + (t.attachments?.length ? `<p><em>Fichiers joints : ${esc(t.attachments.map(a => a.name).join(', '))}</em></p>` : '')
+    + `<h3>Réponse</h3>${md(r.text)}` + sourcesExportHTML(r);
+}
+function threadHTML(th){
+  let h = `<h1>${esc(th.title || 'Conversation')}</h1><p><em>${fmtDate(th.created)}</em></p>`;
+  th.turns.forEach((t, i) => {
+    h += `<hr><h2>Question ${i+1}</h2><p>${nl2br(t.prompt)}</p>`;
+    if (t.attachments?.length) h += `<p><em>Fichiers joints : ${esc(t.attachments.map(a => a.name).join(', '))}</em></p>`;
+    for (const p of PROVIDERS){
+      const r = t.results[p.id]; if (!r) continue;
+      h += `<h3>${esc(p.name)} (${esc(r.model)})</h3>` + (r.error ? `<p><em>Erreur : ${esc(r.error)}</em></p>` : (r.images || []).map(im => `<p><img src="${dataURL(im)}" style="max-width:100%"></p>`).join('') + md(r.text) + sourcesExportHTML(r));
+    }
+  });
+  return h;
+}
+function printHTML(html){
+  const area = $('#printArea');
+  area.innerHTML = `<div class="md">${html}</div>`;
+  const clear = () => { area.innerHTML = ''; window.removeEventListener('afterprint', clear); };
+  window.addEventListener('afterprint', clear);
+  setTimeout(() => { try { window.print(); } catch(e){ toast('Impression indisponible dans ce navigateur.'); } }, 60);
+}
+async function tablesToXlsx(html, name){
+  await loadLib('xlsx');
+  const doc = new DOMParser().parseFromString(`<!doctype html><html><body>${html}</body></html>`, 'text/html');
+  const tables = [...doc.querySelectorAll('table')];
+  if (!tables.length){ toast('Aucun tableau dans cette réponse'); return; }
+  const wb = XLSX.utils.book_new();
+  tables.forEach((tb, k) => XLSX.utils.book_append_sheet(wb, XLSX.utils.table_to_sheet(tb, { raw:false }), 'Tableau '+(k+1)));
+  const buf = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+  download(name+'.xlsx', buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+}
+
+function toolsHTML(pid, i, text){
+  const hasTable = /<table/i.test(md(text));
+  return `<div class="tools" role="group" aria-label="Exporter la réponse">
+    <button type="button" data-exp="speak" data-p="${pid}" data-i="${i}">Écouter</button>
+    <button type="button" data-exp="copy" data-p="${pid}" data-i="${i}">Copier</button>
+    <button type="button" data-exp="word" data-p="${pid}" data-i="${i}">Word</button>
+    <button type="button" data-exp="pdf" data-p="${pid}" data-i="${i}">PDF</button>
+    <button type="button" data-exp="txt" data-p="${pid}" data-i="${i}">Texte</button>
+    ${hasTable ? `<button type="button" data-exp="xlsx" data-p="${pid}" data-i="${i}">Excel</button>` : ''}</div>`;
+}
+
+async function exportAnswer(kind, pid, i, btn){
+  const t = thread.turns[i], r = t?.results[pid], p = P[pid];
+  if (!r?.text) return;
+  const name = slug((thread.title || 'reponse') + '-' + p.name);
+  const old = btn.textContent; btn.disabled = true;
+  try {
+    if (kind === 'speak'){ btn.disabled = false; if (speakingBtn === btn) stopSpeaking(); else { unlockSpeech(); speak(r.text, null, btn); } return; }
+    if (kind === 'copy') await copy(r.text);
+    else if (kind === 'txt') download(name+'.md', `# ${p.name} (${r.model})\n\n**Question :** ${t.prompt}\n\n${r.text}\n\n${sourcesMd(r)}`, 'text/markdown');
+    else if (kind === 'pdf') printHTML(answerHTML(p, t, r));
+    else if (kind === 'word'){ btn.textContent = '…'; download(name+'.docx', await htmlToDocxBlob(answerHTML(p, t, r)), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'); }
+    else if (kind === 'xlsx'){ btn.textContent = '…'; await tablesToXlsx(md(r.text), name); }
+  } catch(e){ toast(e.message || 'Export impossible'); }
+  btn.textContent = old; btn.disabled = false;
+}
+
+
+// ================= Sources (recherche web) =================
+const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch(e){ return ''; } };
+function srcLabel(x){
+  const h = hostOf(x.url);
+  const redirect = /vertexaisearch|googleusercontent|grounding-api/.test(h);
+  return { title: x.title || h || x.url, host: redirect ? '' : h };
+}
+function sourcesHTML(r){
+  if (!r?.sources?.length || r.error) return '';
+  return `<details class="sources"><summary>Sources (${r.sources.length})</summary><ol>` + r.sources.map(x => {
+    const l = srcLabel(x);
+    return `<li><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(l.title)}</a>${l.host && l.host !== l.title ? `<small>${esc(l.host)}</small>` : ''}</li>`;
+  }).join('') + '</ol></details>';
+}
+function sourcesExportHTML(r){
+  if (!r?.sources?.length) return '';
+  return '<h4>Sources</h4><ol>' + r.sources.map(x => `<li><a href="${esc(x.url)}">${esc(srcLabel(x).title)}</a> — ${esc(x.url)}</li>`).join('') + '</ol>';
+}
+function sourcesMd(r){
+  if (!r?.sources?.length) return '';
+  return 'Sources :\n' + r.sources.map((x, i) => `${i+1}. ${srcLabel(x).title} — ${x.url}`).join('\n') + '\n\n';
+}
+const webT = document.getElementById('webToggle');
+webT.checked = !!store.get('web', false);
+webT.addEventListener('change', () => { store.set('web', webT.checked); if (webT.checked) toast('Recherche web activée : ChatGPT, Claude et Gemini chercheront sur internet'); });
+
+// ================= Voix : dictée, lecture, mode vocal =================
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const synth = window.speechSynthesis;
+let voiceCfg = Object.assign({ voiceURI:'', rate:1, reader:'' }, store.get('voice', {}));
+
+// ---- Dictée ----
+let rec = null;
+function setMicUI(on){ const b = $('#btnMic'); b.classList.toggle('live', on); b.textContent = on ? '■ Arrêter' : '🎤 Dicter'; b.setAttribute('aria-pressed', on); }
+function startDictation(opts = {}){
+  if (!SR){ toast('Dictée indisponible ici. Touchez le micro du clavier de l\'iPad.'); opts.onFail?.(); return false; }
+  if (rec){ try { rec.abort(); } catch(e){} }
+  const ta = $('#prompt');
+  const base = opts.replace ? '' : (ta.value.trim() ? ta.value.trimEnd() + ' ' : '');
+  const r = new SR(); rec = r;
+  r.lang = 'fr-FR'; r.interimResults = true; r.continuous = !opts.auto;
+  let heard = false;
+  r.onresult = e => {
+    let txt = '';
+    for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript;
+    heard = heard || !!txt.trim();
+    ta.value = base + txt.replace(/^\s+/, '');
+  };
+  r.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('Micro refusé. Autorisez-le pour ce site (aA dans la barre d\'adresse → Réglages du site web → Micro).');
+    else if (e.error !== 'no-speech' && e.error !== 'aborted') toast('Dictée interrompue : '+e.error);
+  };
+  r.onend = () => { if (rec === r) rec = null; setMicUI(false); opts.onEnd?.(heard); };
+  try { r.start(); setMicUI(true); return true; }
+  catch(e){ rec = null; setMicUI(false); opts.onFail?.(); return false; }
+}
+function stopDictation(){ if (rec){ try { rec.stop(); } catch(e){} } }
+$('#btnMic').onclick = () => { if (rec) stopDictation(); else { unlockSpeech(); startDictation(); } };
+
+// ---- Lecture à voix haute ----
+let speakToken = 0, speakingBtn = null;
+function frVoices(){ return (synth?.getVoices() || []).filter(v => /^fr/i.test(v.lang)); }
+function pickVoice(){
+  const vs = frVoices(); if (!vs.length) return null;
+  return vs.find(v => v.voiceURI === voiceCfg.voiceURI)
+    || vs.find(v => /fr[-_]FR/i.test(v.lang) && /(premium|enhanced|amélie|amelie|thomas)/i.test(v.name))
+    || vs.find(v => /fr[-_]FR/i.test(v.lang)) || vs[0];
+}
+let unlocked = false;
+function unlockSpeech(){ if (unlocked || !synth) return; unlocked = true; try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); } catch(e){} }
+function plainText(mdText){
+  const d = document.createElement('div'); d.innerHTML = md(mdText);
+  d.querySelectorAll('pre').forEach(p => p.replaceWith(' Bloc de code non lu. '));
+  d.querySelectorAll('tr').forEach(tr => tr.replaceWith([...tr.children].map(c => c.textContent.trim()).join(', ') + '. '));
+  d.querySelectorAll('li,p,h1,h2,h3,h4,h5,h6,blockquote').forEach(el => el.append('. '));
+  return d.textContent.replace(/https?:\/\/\S+/g, 'lien').replace(/[*#_`>|]/g, ' ').replace(/(\.\s*){2,}/g, '. ').replace(/\s+/g, ' ').trim();
+}
+function chunks(text){
+  const parts = text.match(/[^.!?…;:]+[.!?…;:]*\s*/g) || [text];
+  const out = []; let cur = '';
+  for (const p of parts){ if ((cur + p).length > 220 && cur){ out.push(cur); cur = ''; } cur += p; }
+  if (cur.trim()) out.push(cur);
+  return out;
+}
+function stopSpeaking(){ speakToken++; try { synth?.cancel(); } catch(e){} if (speakingBtn){ speakingBtn.textContent = 'Écouter'; speakingBtn = null; } }
+function speak(mdText, onEnd, btn){
+  if (!synth){ toast('Lecture à voix haute indisponible dans ce navigateur.'); onEnd?.(); return; }
+  stopSpeaking();
+  const token = ++speakToken, parts = chunks(plainText(mdText));
+  if (btn){ speakingBtn = btn; btn.textContent = 'Arrêter'; }
+  let k = 0;
+  const done = () => { if (token !== speakToken) return; if (speakingBtn === btn && btn){ btn.textContent = 'Écouter'; speakingBtn = null; } onEnd?.(); };
+  const next = () => {
+    if (token !== speakToken) return;
+    if (k >= parts.length) return done();
+    const u = new SpeechSynthesisUtterance(parts[k++]);
+    u.lang = 'fr-FR'; const v = pickVoice(); if (v) u.voice = v; u.rate = +voiceCfg.rate || 1;
+    u.onend = next; u.onerror = e => { if (e.error !== 'interrupted' && e.error !== 'canceled') next(); };
+    synth.speak(u);
+  };
+  next();
+}
+
+// ---- Mode vocal (conversation mains libres) ----
+const voice = { on:false };
+function vStatus(txt, state){ $('#voiceStatus').textContent = txt; $('#voiceBar').dataset.state = state || ''; $('#vTalk').hidden = state !== 'idle'; $('#vSkip').hidden = state !== 'speaking'; }
+function fillReader(){
+  const sel = $('#voiceReader'); const cur = voiceCfg.reader;
+  const avail = PROVIDERS.filter(p => keys[p.id] && enabled[p.id] !== false);
+  sel.innerHTML = avail.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="">Aucune IA</option>';
+  sel.value = avail.some(p => p.id === cur) ? cur : (avail[0]?.id || '');
+}
+function voiceListen(){
+  if (!voice.on) return;
+  stopSpeaking();
+  vStatus('Je vous écoute… parlez, puis marquez une pause.', 'listening');
+  const ok = startDictation({ auto:true, replace:true,
+    onEnd: heard => {
+      if (!voice.on) return;
+      const txt = $('#prompt').value.trim();
+      if (!heard || !txt){ vStatus('Je n\'ai rien entendu. Touchez « Parler » pour réessayer.', 'idle'); return; }
+      voiceSend();
+    },
+    onFail: () => vStatus('Touchez « Parler » pour me poser votre question.', 'idle')
+  });
+  if (!ok && voice.on) vStatus('Touchez « Parler » pour me poser votre question.', 'idle');
+}
+async function voiceSend(){
+  vStatus('Les IA réfléchissent…', 'thinking');
+  await send();
+  if (!voice.on) return;
+  const t = thread.turns[thread.turns.length - 1];
+  const order = [voiceCfg.reader, ...PROVIDERS.map(p => p.id)];
+  const id = order.find(x => x && t?.results[x]?.text && !t.results[x].error);
+  if (!id){ vStatus('Aucune réponse à lire. Touchez « Parler » pour continuer.', 'idle'); return; }
+  vStatus('Lecture de la réponse de ' + P[id].name + '…', 'speaking');
+  speak(t.results[id].text, () => { if (voice.on) voiceListen(); });
+}
+function startVoice(){
+  if (!SR && !synth){ toast('Le mode vocal n\'est pas disponible dans ce navigateur.'); return; }
+  if (!PROVIDERS.some(p => keys[p.id] && enabled[p.id] !== false)){ toast('Ajoutez au moins une clé API'); openSettings(); return; }
+  voice.on = true; unlockSpeech(); fillReader();
+  $('#voiceBar').hidden = false; $('#btnVoice').classList.add('live');
+  voiceListen();
+}
+function stopVoice(){
+  voice.on = false; stopSpeaking(); if (rec){ try { rec.abort(); } catch(e){} }
+  $('#voiceBar').hidden = true; $('#btnVoice').classList.remove('live');
+}
+$('#btnVoice').onclick = () => voice.on ? stopVoice() : startVoice();
+$('#vTalk').onclick = () => { unlockSpeech(); voiceListen(); };
+$('#vSkip').onclick = () => { stopSpeaking(); voiceListen(); };
+$('#vStop').onclick = stopVoice;
+$('#voiceReader').onchange = e => { voiceCfg.reader = e.target.value; store.set('voice', voiceCfg); };
+
+// ---- Réglages de la voix ----
+function fillVoiceSettings(){
+  const sel = $('#setVoice'); const vs = frVoices();
+  sel.innerHTML = '<option value="">Automatique (meilleure voix française)</option>' + vs.map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name)} (${esc(v.lang)})</option>`).join('');
+  sel.value = vs.some(v => v.voiceURI === voiceCfg.voiceURI) ? voiceCfg.voiceURI : '';
+  $('#setRate').value = String(voiceCfg.rate || 1);
+}
+if (synth) synth.onvoiceschanged = () => { if ($('#dlgSettings').open) fillVoiceSettings(); };
+$('#btnTestVoice').onclick = () => { unlockSpeech(); const keep = { ...voiceCfg }; voiceCfg.voiceURI = $('#setVoice').value; voiceCfg.rate = +$('#setRate').value; speak('Bonjour, voici la voix qui lira les réponses de vos IA.', () => {}); voiceCfg = keep; };
+
+// ================= Mémoire et projets =================
+function projName(id){ return projects.find(x => x.id === id)?.name || ''; }
+function systemFor(th){
+  const parts = [];
+  if (memory.trim()) parts.push('Informations et préférences de l\'utilisateur, à prendre en compte dans tes réponses :\n' + memory.trim());
+  const pr = projects.find(x => x.id === th.project);
+  if (pr){
+    let s = `Cette conversation fait partie du projet « ${pr.name} ».`;
+    if ((pr.instructions || '').trim()) s += '\nInstructions du projet :\n' + pr.instructions.trim();
+    parts.push(s);
+  }
+  return parts.join('\n\n');
+}
+function metaTouch(){ store.set('metaUpdated', Date.now()); scheduleSync(); }
+function saveProjects(){ store.set('projects', projects); metaTouch(); }
+
+function renderProjSel(){
+  const sel = $('#projSel');
+  sel.innerHTML = `<option value="">Sans projet</option>`
+    + projects.map(p => `<option value="${esc(p.id)}">📁 ${esc(p.name)}</option>`).join('')
+    + `<option value="__new">＋ Nouveau projet…</option><option value="__manage">Gérer les projets…</option>`;
+  sel.value = thread.project && projects.some(p => p.id === thread.project) ? thread.project : '';
+}
+$('#projSel').addEventListener('change', async e => {
+  const v = e.target.value;
+  if (v === '__new'){ renderProjSel(); openProjects(true); return; }
+  if (v === '__manage'){ renderProjSel(); openProjects(false); return; }
+  activeProject = v || null; store.set('activeProject', activeProject);
+  thread.project = activeProject;
+  if (thread.turns.length){ await saveThread(); toast(activeProject ? 'Conversation rangée dans « '+projName(activeProject)+' »' : 'Conversation retirée du projet'); }
+  else toast(activeProject ? 'Les nouvelles conversations iront dans « '+projName(activeProject)+' »' : 'Nouvelles conversations sans projet');
+});
+
+async function renderProjects(focusNew){
+  const all = await Hist.all();
+  const box = $('#projList');
+  if (!projects.length){ box.innerHTML = '<p class="note">Aucun projet pour l\'instant. Exemples : « Santé », « Maison », « Voyage au Japon ».</p>'; return; }
+  box.innerHTML = projects.map(p => {
+    const n = all.filter(t => t.project === p.id).length;
+    return `<div class="proj${p.id === activeProject ? ' active' : ''}" data-pid="${esc(p.id)}">
+      <div class="prow"><input type="text" value="${esc(p.name)}" data-f="name" aria-label="Nom du projet" maxlength="60">
+        <span class="count">${n} conversation${n>1?'s':''}</span></div>
+      <textarea data-f="instructions" aria-label="Instructions du projet" placeholder="Instructions pour les IA dans ce projet (facultatif). Ex. : Je prépare un voyage de 2 semaines au Japon en avril, budget moyen, avec ma femme.">${esc(p.instructions || '')}</textarea>
+      <div class="prow"><button class="btn" type="button" data-act="use">Nouvelle conversation dans ce projet</button>
+        <button class="btn" type="button" data-act="hist">Voir ses conversations</button>
+        <button class="btn ghost danger" type="button" data-act="del">Supprimer</button></div></div>`;
+  }).join('');
+  if (focusNew){ const inp = box.querySelector('.proj:last-child input'); inp?.focus(); inp?.select(); }
+}
+async function openProjects(addNew){
+  if (addNew) addProject();
+  await renderProjects(addNew);
+  if (!$('#dlgProjects').open) $('#dlgProjects').showModal();
+}
+function addProject(){
+  const p = { id:uid(), name:'Nouveau projet', instructions:'', created:Date.now() };
+  projects.push(p); saveProjects(); return p;
+}
+$('#btnProjects').onclick = () => openProjects(false);
+$('#btnCloseProj').onclick = () => $('#dlgProjects').close();
+$('#dlgProjects').addEventListener('close', () => { renderProjSel(); });
+$('#btnAddProj').onclick = async () => { addProject(); await renderProjects(true); };
+$('#projList').addEventListener('input', e => {
+  const card = e.target.closest('[data-pid]'); const f = e.target.dataset.f; if (!card || !f) return;
+  const p = projects.find(x => x.id === card.dataset.pid); if (!p) return;
+  p[f] = f === 'name' ? e.target.value.trim() || 'Sans nom' : e.target.value;
+  clearTimeout(renderProjects.t); renderProjects.t = setTimeout(saveProjects, 500);
+});
+$('#projList').addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const id = b.closest('[data-pid]').dataset.pid;
+  if (b.dataset.act === 'use'){
+    if (pending.size){ toast('Attendez la fin des réponses en cours'); return; }
+    activeProject = id; store.set('activeProject', id);
+    thread = newThread(); store.set('current', null); renderAll(); $('#dlgProjects').close(); $('#prompt').focus();
+  } else if (b.dataset.act === 'hist'){
+    $('#dlgProjects').close(); openHistory(id);
+  } else if (b.dataset.act === 'del'){
+    if (b.dataset.armed !== '1'){ b.dataset.armed = '1'; b.textContent = 'Confirmer (les conversations sont conservées)'; setTimeout(() => { if (b.isConnected){ b.dataset.armed = ''; b.textContent = 'Supprimer'; } }, 4000); return; }
+    projects = projects.filter(x => x.id !== id); saveProjects();
+    if (activeProject === id){ activeProject = null; store.set('activeProject', null); }
+    for (const t of await Hist.all()) if (t.project === id){ t.project = null; t.updated = Date.now(); await Hist.put(t); }
+    if (thread.project === id) thread.project = null;
+    scheduleSync(); renderProjects(); renderProjSel(); toast('Projet supprimé, ses conversations sont gardées « sans projet »');
+  }
+});
+
+// ================= Synchronisation (dépôt GitHub privé) =================
+let syncCfg = store.get('sync', { repo:'', token:'' });
+const syncOn = () => !!(syncCfg.repo && syncCfg.token);
+let syncState = store.get('syncState', { threads:{}, meta:null });
+let syncBusy = false, syncAgain = false, syncTimer = 0, lastSync = 0;
+
+function setSyncUI(state, label){
+  const b = $('#btnSync'); b.hidden = !syncOn(); b.dataset.state = state; $('#syncLabel').textContent = label;
+}
+function b64utf8(str){
+  const bytes = new TextEncoder().encode(str); let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+async function gh(path, { method = 'GET', body, raw = false, cfg = syncCfg } = {}){
+  const url = path.startsWith('/') ? 'https://api.github.com' + path : `https://api.github.com/repos/${cfg.repo}/contents/${path}`;
+  const r = await fetch(url, { method, cache:'no-store',
+    headers:{ 'Authorization':'Bearer '+cfg.token, 'Accept': raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28', ...(body ? { 'Content-Type':'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined });
+  return r;
+}
+function ghError(r, what){
+  const m = { 401:'Jeton GitHub refusé ou expiré.', 403:'Le jeton n\'a pas les droits nécessaires sur ce dépôt.', 404:'Dépôt introuvable, ou jeton sans accès à ce dépôt.', 409:'Conflit de version, nouvel essai à la prochaine synchronisation.', 422:'Fichier refusé par GitHub.' };
+  return new Error((m[r.status] || 'Erreur GitHub '+r.status) + (what ? ' ('+what+')' : ''));
+}
+async function ghList(dir){
+  const r = await gh(dir);
+  if (r.status === 404) return [];
+  if (!r.ok) throw ghError(r, dir);
+  const j = await r.json(); return Array.isArray(j) ? j : [];
+}
+async function ghRead(path){
+  const r = await gh(path, { raw:true });
+  if (!r.ok) throw ghError(r, path);
+  return JSON.parse(await r.text());
+}
+async function ghShaOf(path){
+  const r = await gh(path); if (r.status === 404) return null; if (!r.ok) throw ghError(r, path);
+  return (await r.json()).sha;
+}
+async function ghWrite(path, obj, sha, retry = true){
+  const body = { message:'Table ronde : '+path, content:b64utf8(JSON.stringify(obj)) };
+  if (sha) body.sha = sha;
+  const r = await gh(path, { method:'PUT', body });
+  if ((r.status === 409 || r.status === 422) && retry){ return ghWrite(path, obj, await ghShaOf(path), false); }
+  if (!r.ok) throw ghError(r, path);
+  return (await r.json()).content.sha;
+}
+async function ghDelete(path, sha){
+  if (!sha) sha = await ghShaOf(path);
+  if (!sha) return;
+  const r = await gh(path, { method:'DELETE', body:{ message:'Table ronde : suppression '+path, sha } });
+  if (!r.ok && r.status !== 404) throw ghError(r, path);
+}
+const saveSyncState = () => store.set('syncState', syncState);
+
+async function syncNow(){
+  if (!syncOn()) { setSyncUI('ok', ''); return; }
+  if (syncBusy){ syncAgain = true; return; }
+  syncBusy = true; setSyncUI('busy', 'Synchronisation…');
+  try {
+    // 1. Mémoire et projets
+    const metaFile = (await ghList('').catch(() => [])).find(f => f.name === 'meta.json');
+    const localMetaUpd = store.get('metaUpdated', 0);
+    if (metaFile && metaFile.sha !== syncState.meta?.sha){
+      const R = await ghRead('meta.json');
+      if ((R.updated || 0) > localMetaUpd){
+        memory = R.memory || ''; projects = Array.isArray(R.projects) ? R.projects : [];
+        store.set('memory', memory); store.set('projects', projects); store.set('metaUpdated', R.updated);
+        syncState.meta = { sha:metaFile.sha, updated:R.updated };
+        renderProjSel();
+      } else syncState.meta = { sha:metaFile.sha, updated:-1 };
+    }
+    const curMetaUpd = store.get('metaUpdated', 0);
+    if (curMetaUpd && (!syncState.meta || syncState.meta.updated !== curMetaUpd)){
+      const sha = await ghWrite('meta.json', { app:'table-ronde-ia', memory, projects, updated:curMetaUpd }, syncState.meta?.sha || metaFile?.sha);
+      syncState.meta = { sha, updated:curMetaUpd };
+    }
+    saveSyncState();
+
+    // 2. Conversations
+    const remote = new Map((await ghList('threads')).filter(f => f.name.endsWith('.json')).map(f => [f.name.slice(0, -5), f.sha]));
+    const local = new Map((await Hist.all()).map(t => [t.id, t]));
+    let changedCurrent = false;
+    for (const [id, sha] of remote){
+      const st = syncState.threads[id];
+      if (st && st.sha === sha) continue;
+      const R = await ghRead(`threads/${id}.json`);
+      const L = local.get(id);
+      if (!L || (R.updated || 0) >= (L.updated || 0)){
+        if (pending.size && id === thread.id){ syncState.threads[id] = { sha, updated:-1 }; continue; }
+        await Hist.put(R); local.set(id, R);
+        syncState.threads[id] = { sha, updated:R.updated };
+        if (id === thread.id){ thread = R; changedCurrent = true; }
+      } else syncState.threads[id] = { sha, updated:-1 };
+      saveSyncState();
+    }
+    // supprimées sur un autre appareil
+    for (const id of Object.keys(syncState.threads)){
+      if (remote.has(id)) continue;
+      const st = syncState.threads[id], L = local.get(id);
+      if (L && st.updated !== -1 && L.updated > st.updated){ delete syncState.threads[id]; continue; } // modifiée ici depuis : on la renverra
+      if (L && !(pending.size && id === thread.id)){ await Hist.del(id); local.delete(id); if (id === thread.id){ thread = newThread(); store.set('current', null); changedCurrent = true; } }
+      delete syncState.threads[id]; saveSyncState();
+    }
+    // envois
+    for (const [id, L] of local){
+      if (pending.size && id === thread.id) continue;
+      const st = syncState.threads[id];
+      if (st && st.updated === L.updated) continue;
+      const sha = await ghWrite(`threads/${id}.json`, L, st?.sha || remote.get(id));
+      syncState.threads[id] = { sha, updated:L.updated }; saveSyncState();
+    }
+    if (changedCurrent) renderAll();
+    lastSync = Date.now();
+    setSyncUI('ok', 'Synchronisé ' + new Date().toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }));
+  } catch(e){
+    setSyncUI('err', e instanceof TypeError ? 'Hors ligne' : 'Erreur de synchro');
+    $('#btnSync').title = e.message || 'Erreur';
+  } finally {
+    syncBusy = false;
+    if (syncAgain){ syncAgain = false; scheduleSync(1500); }
+  }
+}
+function scheduleSync(delay = 3000){ if (!syncOn()) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, delay); }
+async function syncDelete(id){
+  if (!syncOn()) return;
+  const st = syncState.threads[id];
+  try { await ghDelete(`threads/${id}.json`, st?.sha); delete syncState.threads[id]; saveSyncState(); }
+  catch(e){ setSyncUI('err', 'Erreur de synchro'); $('#btnSync').title = e.message; }
+}
+$('#btnSync').onclick = () => {
+  const b = $('#btnSync');
+  if (b.dataset.state === 'err' && b.title && b.title !== 'Synchroniser maintenant') toast(b.title + ' Nouvel essai…');
+  b.title = 'Synchroniser maintenant'; syncNow();
+};
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastSync > 20000) syncNow(); });
+window.addEventListener('online', () => syncNow());
+
+$('#btnTestSync').onclick = async () => {
+  const cfg = { repo:$('#syncRepo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$|\/$/g, ''), token:$('#syncToken').value.trim() };
+  const box = $('#syncTestMsg');
+  const msg = { set textContent(v){ box.hidden = false; box.textContent = v; box.scrollIntoView({ block:'nearest' }); if (!v.endsWith('…')) toast(v); } };
+  if (!/^[\w.-]+\/[\w.-]+$/.test(cfg.repo) || !cfg.token){ msg.textContent = 'Indiquez le dépôt (utilisateur/nom) et le jeton.'; return; }
+  msg.textContent = 'Test en cours…';
+  try {
+    const r = await gh('/repos/'+cfg.repo, { cfg });
+    if (!r.ok) throw ghError(r);
+    const j = await r.json();
+    if (!j.private){ msg.textContent = '⚠️ Ce dépôt est public : choisissez un dépôt privé pour protéger vos conversations.'; return; }
+    if (j.permissions && !j.permissions.push){ msg.textContent = '⚠️ Le jeton peut lire mais pas écrire. Donnez-lui le droit « Contents : Read and write ».'; return; }
+    msg.textContent = '✅ Connexion réussie. Touchez « Enregistrer » pour activer la synchronisation.';
+  } catch(e){ msg.textContent = '❌ ' + (e instanceof TypeError ? 'Connexion impossible.' : e.message); }
+};
+
+// ================= Création d'images =================
+let imgCfg = Object.assign({ openai:'gpt-image-1', gemini:'gemini-2.5-flash-image', quality:'medium' }, store.get('imgCfg', {}));
+const IMG_SIZES = { square:{ oa:'1024x1024', dalle:'1024x1024', ar:'1:1', label:'Carré' }, portrait:{ oa:'1024x1536', dalle:'1024x1792', ar:'2:3', label:'Portrait' }, landscape:{ oa:'1536x1024', dalle:'1792x1024', ar:'3:2', label:'Paysage' } };
+function b64ToBlob(b64, mime){ const bin = atob(b64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], { type:mime }); }
+
+async function openaiImage(key, model, prompt, bases, o){
+  const sz = IMG_SIZES[o.size] || IMG_SIZES.square;
+  const dalle = /^dall-e/.test(model);
+  let r;
+  if (!bases.length || dalle){
+    const body = dalle
+      ? { model, prompt, n:1, size: model === 'dall-e-3' ? sz.dalle : '1024x1024', response_format:'b64_json', ...(model === 'dall-e-3' ? { quality: o.quality === 'high' ? 'hd' : 'standard' } : {}) }
+      : { model, prompt, n:1, size:sz.oa, quality:o.quality, output_format:'jpeg', output_compression:88 };
+    r = await fetch('https://api.openai.com/v1/images/generations', { method:'POST', signal:o.signal, headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+key }, body:JSON.stringify(body) });
+  } else {
+    const fd = new FormData();
+    fd.append('model', model); fd.append('prompt', prompt); fd.append('n', '1'); fd.append('size', sz.oa);
+    fd.append('quality', o.quality); fd.append('output_format', 'jpeg'); fd.append('output_compression', '88');
+    bases.forEach((b, k) => fd.append('image[]', b64ToBlob(b.data, b.mime), `image${k}.${b.mime === 'image/png' ? 'png' : 'jpg'}`));
+    r = await fetch('https://api.openai.com/v1/images/edits', { method:'POST', signal:o.signal, headers:{ 'Authorization':'Bearer '+key }, body:fd });
+  }
+  if (!r.ok){
+    let detail = ''; try { const j = await r.clone().json(); detail = j.error?.message || ''; } catch(e){}
+    if (/verif/i.test(detail)) throw new Error('OpenAI demande de vérifier votre organisation avant d\'utiliser ce modèle d\'images : sur platform.openai.com, Settings → Organization → General → Verify Organization (pièce d\'identité, quelques minutes). En attendant, vous pouvez choisir le modèle « dall-e-3 » dans Réglages → Création d\'images.\n\nDétail : ' + detail);
+    await check(r);
+  }
+  const j = await r.json();
+  const images = (j.data || []).filter(d => d.b64_json).map(d => ({ mime: dalle ? 'image/png' : 'image/jpeg', data:d.b64_json }));
+  if (!images.length) throw new Error('Aucune image renvoyée par OpenAI.');
+  return { images, text:'' };
+}
+async function geminiImage(key, model, prompt, bases, o){
+  const sz = IMG_SIZES[o.size] || IMG_SIZES.square;
+  const body = { contents:[{ role:'user', parts:[ ...bases.map(b => ({ inline_data:{ mime_type:b.mime, data:b.data } })), { text:prompt } ] }],
+    generationConfig:{ responseModalities:['TEXT','IMAGE'], imageConfig:{ aspectRatio:sz.ar } } };
+  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent', { method:'POST', signal:o.signal,
+    headers:{ 'Content-Type':'application/json', 'x-goog-api-key':key }, body:JSON.stringify(body) });
+  await check(r);
+  const j = await r.json();
+  const parts = j.candidates?.[0]?.content?.parts || [];
+  const images = parts.map(p => p.inlineData || p.inline_data).filter(Boolean).map(d => ({ mime:d.mimeType || d.mime_type || 'image/png', data:d.data }));
+  const text = parts.filter(p => p.text && !p.thought).map(p => p.text).join('\n').trim();
+  if (!images.length) throw new Error('Gemini n\'a pas renvoyé d\'image' + (text ? ' :\n\n' + text : '. Essayez de reformuler la demande.'));
+  return { images, text };
+}
+P.openai.image = openaiImage; P.openai.imageModel = () => imgCfg.openai || 'gpt-image-1';
+P.gemini.image = geminiImage; P.gemini.imageModel = () => imgCfg.gemini || 'gemini-2.5-flash-image';
+
+function imagesHTML(r, pid, i){
+  return (r.images || []).map((im, k) => `<figure class="genimg"><img src="${dataURL(im)}" alt="Image créée par ${esc(P[pid].name)}" data-zoom="${pid}|${i}|${k}">
+    <div class="tools"><button type="button" data-img="zoom" data-p="${pid}" data-i="${i}" data-k="${k}">Agrandir</button>
+    <button type="button" data-img="save" data-p="${pid}" data-i="${i}" data-k="${k}">Enregistrer</button>
+    <button type="button" data-img="attach" data-p="${pid}" data-i="${i}" data-k="${k}">Joindre au message</button></div></figure>`).join('');
+}
+
+async function runImage(p, turn, idx, prev){
+  const out = $('#out-'+p.id);
+  const el = document.querySelector(`#turn-${p.id}-${idx} .ans`);
+  const metaEl = document.querySelector(`#turn-${p.id}-${idx} .tmeta`);
+  const model = p.imageModel();
+  const ctrl = new AbortController(); runs[p.id] = ctrl;
+  const res = { model, text:'', images:[], ms:0, error:null, image:true };
+  let bases = (turn.attachments || []).filter(a => a.type === 'image');
+  const last = prev[prev.length - 1];
+  if (!bases.length && last?.mode === 'image' && last.results[p.id]?.images?.length){ bases = [last.results[p.id].images[0]]; res.edit = true; }
+  else if (bases.length) res.edit = true;
+  el.className = 'ans skip'; el.textContent = res.edit ? 'Retouche de l\'image en cours, souvent 15 à 60 secondes…' : 'Création de l\'image en cours, souvent 15 à 60 secondes…';
+  setStatus(p.id, 'run', 'Création…');
+  const t0 = performance.now();
+  try {
+    const o = await p.image(keys[p.id], model, turn.prompt, bases, { size:turn.size, quality:imgCfg.quality, signal:ctrl.signal });
+    res.images = o.images; res.text = o.text || '';
+    el.className = 'ans'; el.innerHTML = imagesHTML(res, p.id, idx) + (res.text ? `<div class="md">${md(res.text)}</div>` : '');
+    out.scrollTop = out.scrollHeight;
+    setStatus(p.id, 'done', 'Terminé');
+  } catch(e){
+    if (e.name === 'AbortError'){ res.stopped = true; res.error = 'Création interrompue.'; setStatus(p.id, '', 'Arrêté'); }
+    else { res.error = e instanceof TypeError ? 'Connexion impossible avec '+p.vendor+'. Vérifiez votre connexion internet et réessayez.' : e.message; setStatus(p.id, 'err', 'Erreur'); }
+    el.className = 'ans error'; el.textContent = res.error;
+  } finally {
+    res.ms = performance.now() - t0;
+    turn.results[p.id] = res;
+    pending.delete(p.id);
+    metaEl.textContent = metaText(res);
+    const count = thread.turns.filter(t => t.results[p.id] && !t.results[p.id].error).length;
+    $('#meta-'+p.id).textContent = count ? `${count} réponse${count>1?'s':''}` : '—';
+    await saveThread();
+  }
+}
+
+function openLightbox(src){
+  const lb = $('#lightbox'); $('#lightboxImg').src = src; lb.hidden = false;
+}
+$('#lightbox').addEventListener('click', e => { if (e.target.id !== 'lightboxImg') { $('#lightbox').hidden = true; $('#lightboxImg').src = ''; } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#lightbox').hidden){ $('#lightbox').hidden = true; } });
+
+$('#grid').addEventListener('click', e => {
+  const z = e.target.closest('img[data-zoom]');
+  const b = e.target.closest('[data-img]');
+  if (!z && !b) return;
+  const [pid, i, k] = z ? z.dataset.zoom.split('|') : [b.dataset.p, b.dataset.i, b.dataset.k];
+  const im = thread.turns[+i]?.results[pid]?.images?.[+k]; if (!im) return;
+  const act = z ? 'zoom' : b.dataset.img;
+  if (act === 'zoom') openLightbox(dataURL(im));
+  else if (act === 'save') download(slug((thread.title || 'image') + '-' + P[pid].name) + (im.mime === 'image/png' ? '.png' : '.jpg'), b64ToBlob(im.data, im.mime), im.mime);
+  else if (act === 'attach'){
+    if (pendingAtts.length >= MAX_FILES){ toast('Maximum '+MAX_FILES+' fichiers par message'); return; }
+    pendingAtts.push({ type:'image', mime:im.mime, name:'image-'+slug(P[pid].name)+(im.mime === 'image/png' ? '.png' : '.jpg'), data:im.data, size:Math.round(im.data.length*0.75) });
+    renderAttach(); $('#prompt').focus(); toast('Image jointe à votre prochain message');
+  }
+});
+
+const imgT = $('#imgToggle'), imgSz = $('#imgSize');
+imgT.checked = !!store.get('imgMode', false); imgSz.value = store.get('imgSize', 'square');
+function syncImgUI(){ imgSz.hidden = !imgT.checked; $('#prompt').placeholder = imgT.checked ? 'Décrivez l\'image à créer (sujet, style, couleurs, ambiance…). ChatGPT et Gemini en proposent chacun une. Pour retoucher, écrivez simplement la modification souhaitée.' : 'Posez votre question une seule fois, elle part vers toutes les IA cochées. Les questions suivantes tiennent compte de la conversation.'; }
+imgT.addEventListener('change', () => { store.set('imgMode', imgT.checked); syncImgUI(); if (imgT.checked) toast('Mode création d\'image : ChatGPT et Gemini dessinent votre description'); });
+imgSz.addEventListener('change', () => store.set('imgSize', imgSz.value));
+syncImgUI();
+
+// ================= Démarrage =================
+async function migrateOld(){
+  if (store.get('migrated', false)) return;
+  const old = store.get('history', []);
+  for (const h of old){
+    if (!h?.prompt) continue;
+    await Hist.put({ id:'ancien-'+h.date, title:h.prompt.slice(0, 90), created:h.date, updated:h.date, turns:[{ prompt:h.prompt, date:h.date, results:h.results||{} }] });
+  }
+  store.set('migrated', true);
+}
+
+(async function start(){
+  build();
+  $('#prompt').value = store.get('draft', '');
+  await migrateOld();
+  const cur = store.get('current', null);
+  if (cur){ const th = (await Hist.all()).find(x => x.id === cur); if (th) thread = th; }
+  renderAll();
+  setSyncUI('ok', syncOn() ? 'Synchronisation…' : '');
+  if (syncOn()) syncNow();
+  if (!Object.keys(keys).length) setTimeout(openSettings, 300);
+})();
+</script>
+</body>
+</html>
