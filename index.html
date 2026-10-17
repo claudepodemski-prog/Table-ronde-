@@ -288,7 +288,8 @@ body:has(.voicebar:not([hidden])){padding-bottom:120px}
       <input id="syncRepo" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="claudepodemski-prog/table-ronde-donnees">
       <label for="syncToken">Jeton d'accès GitHub</label>
       <input id="syncToken" class="field" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="github_pat_…">
-      <div class="row2"><button class="btn" type="button" id="btnTestSync">Tester la connexion</button><span id="syncTestMsg" class="hint"></span></div>
+      <button class="btn" type="button" id="btnTestSync" style="align-self:flex-start">Tester la connexion</button>
+      <p id="syncTestMsg" class="note" hidden></p>
     </div>
     <div class="dlg-body voiceset">
       <h3>Voix</h3>
@@ -564,7 +565,7 @@ function md(text){
   return '<p style="white-space:pre-wrap">'+esc(text)+'</p>';
 }
 const fmtDate = t => new Date(t).toLocaleString('fr-FR', { dateStyle:'short', timeStyle:'short' });
-function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 2200); }
+function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, Math.max(2200, msg.length * 60)); }
 async function copy(text){
   try { await navigator.clipboard.writeText(text); toast('Copié'); }
   catch(e){ const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); toast('Copié'); }catch(_){} ta.remove(); }
@@ -868,7 +869,7 @@ $('#btnExportMd').onclick = () => {
 $('#btnNew').onclick = () => { if (pending.size) return; thread = newThread(); store.set('current', null); renderAll(); $('#prompt').focus(); };
 
 function openSettings(){ for (const p of PROVIDERS) $('#key-'+p.id).value = keys[p.id] || '';
-  $('#setMemory').value = memory; $('#syncRepo').value = syncCfg.repo || ''; $('#syncToken').value = syncCfg.token || ''; $('#syncTestMsg').textContent = ''; try { fillVoiceSettings(); } catch(e){} $('#dlgSettings').showModal(); }
+  $('#setMemory').value = memory; $('#syncRepo').value = syncCfg.repo || ''; $('#syncToken').value = syncCfg.token || ''; $('#syncTestMsg').hidden = true; try { fillVoiceSettings(); } catch(e){} $('#dlgSettings').showModal(); }
 $('#btnSettings').onclick = openSettings;
 $('#dlgSettings').addEventListener('close', () => {
   if ($('#dlgSettings').returnValue !== 'save') return;
@@ -1525,13 +1526,18 @@ async function syncDelete(id){
   try { await ghDelete(`threads/${id}.json`, st?.sha); delete syncState.threads[id]; saveSyncState(); }
   catch(e){ setSyncUI('err', 'Erreur de synchro'); $('#btnSync').title = e.message; }
 }
-$('#btnSync').onclick = () => { $('#btnSync').title = 'Synchroniser maintenant'; syncNow(); };
+$('#btnSync').onclick = () => {
+  const b = $('#btnSync');
+  if (b.dataset.state === 'err' && b.title && b.title !== 'Synchroniser maintenant') toast(b.title + ' Nouvel essai…');
+  b.title = 'Synchroniser maintenant'; syncNow();
+};
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastSync > 20000) syncNow(); });
 window.addEventListener('online', () => syncNow());
 
 $('#btnTestSync').onclick = async () => {
   const cfg = { repo:$('#syncRepo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$|\/$/g, ''), token:$('#syncToken').value.trim() };
-  const msg = $('#syncTestMsg');
+  const box = $('#syncTestMsg');
+  const msg = { set textContent(v){ box.hidden = false; box.textContent = v; box.scrollIntoView({ block:'nearest' }); if (!v.endsWith('…')) toast(v); } };
   if (!/^[\w.-]+\/[\w.-]+$/.test(cfg.repo) || !cfg.token){ msg.textContent = 'Indiquez le dépôt (utilisateur/nom) et le jeton.'; return; }
   msg.textContent = 'Test en cours…';
   try {
