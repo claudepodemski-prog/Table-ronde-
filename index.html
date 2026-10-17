@@ -98,6 +98,19 @@ header.top{display:flex;align-items:center;gap:8px;padding-block:18px 14px;flex-
 .tmeta{font:11.5px var(--f-mono);color:var(--muted)}
 .tmeta:empty{display:none}
 
+.composer.drag{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent)}
+.attach-row{display:flex;gap:8px;flex-wrap:wrap}
+.att{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:4px 4px 4px 4px;background:var(--bg);font-size:12.5px;max-width:240px;min-width:0}
+.att img,.att .pdf{width:36px;height:36px;flex:none;border-radius:5px;object-fit:cover}
+.att .pdf{background:var(--sunk);display:grid;place-items:center;font:600 10px var(--f-mono);color:var(--danger)}
+.att .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;display:flex;flex-direction:column}
+.att .nm small{color:var(--muted);font:11px var(--f-mono)}
+.att button{border:0;background:none;color:var(--muted);cursor:pointer;padding:4px 6px;border-radius:5px;font-size:14px}
+.att button:hover{color:var(--fg);background:var(--sunk)}
+.ask .atts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-bottom:5px}
+.ask .atts img{width:56px;height:56px;object-fit:cover;border-radius:6px;display:block}
+.ask .pdfb{font:11px var(--f-mono);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
 .md{font-size:14.5px}
 .md>*:first-child{margin-top:0}
 .md>*:last-child{margin-bottom:0}
@@ -151,7 +164,10 @@ dialog::backdrop{background:rgba(10,12,18,.45)}
 
 <form class="composer" id="composer">
   <textarea id="prompt" placeholder="Posez votre question une seule fois, elle part vers toutes les IA cochées. Les questions suivantes tiennent compte de la conversation." aria-label="Prompt"></textarea>
+  <div class="attach-row" id="attachRow" hidden></div>
   <div class="composer-bar">
+    <button class="btn" id="btnAttach" type="button" title="Joindre des images ou des PDF">＋ Joindre</button>
+    <input type="file" id="attachFile" accept="image/*,application/pdf,.pdf" multiple hidden>
     <div class="toggles" id="toggles"></div>
     <span class="hint">Ctrl + Entrée</span>
     <button class="btn" id="btnStop" type="button" hidden>Arrêter</button>
@@ -271,12 +287,37 @@ async function readSSE(resp, onData){
     }
   }
 }
-function openAIStyle(url){
+// Conversation générique : [{ role:'user'|'assistant', text, atts:[{type:'image'|'pdf', mime, name, data}] }]
+const dataURL = a => `data:${a.mime};base64,${a.data}`;
+const toOpenAI = convo => convo.map(m => {
+  if (m.role === 'assistant' || !m.atts?.length) return { role:m.role, content:m.text };
+  return { role:'user', content:[ { type:'text', text:m.text }, ...m.atts.map(a => a.type === 'image'
+    ? { type:'image_url', image_url:{ url:dataURL(a) } }
+    : { type:'file', file:{ filename:a.name, file_data:dataURL(a) } }) ] };
+});
+const toMistral = convo => convo.map(m => {
+  if (m.role === 'assistant' || !m.atts?.length) return { role:m.role, content:m.text };
+  return { role:'user', content:[ { type:'text', text:m.text }, ...m.atts.map(a => a.type === 'image'
+    ? { type:'image_url', image_url:dataURL(a) }
+    : { type:'document_url', document_url:dataURL(a), document_name:a.name }) ] };
+});
+const toAnthropic = convo => convo.map(m => {
+  if (m.role === 'assistant' || !m.atts?.length) return { role:m.role, content:m.text };
+  return { role:'user', content:[ ...m.atts.map(a => a.type === 'image'
+    ? { type:'image', source:{ type:'base64', media_type:a.mime, data:a.data } }
+    : { type:'document', source:{ type:'base64', media_type:'application/pdf', data:a.data } }), { type:'text', text:m.text } ] };
+});
+const toGemini = convo => convo.map(m => ({
+  role: m.role === 'assistant' ? 'model' : 'user',
+  parts: [ ...(m.role === 'user' ? (m.atts||[]).map(a => ({ inline_data:{ mime_type:a.mime, data:a.data } })) : []), { text:m.text } ]
+}));
+
+function openAIStyle(url, convert){
   return {
-    async stream(key, model, messages, signal, onText){
+    async stream(key, model, convo, signal, onText){
       const r = await fetch(url+'/chat/completions', { method:'POST', signal,
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+key },
-        body: JSON.stringify({ model, stream:true, messages }) });
+        body: JSON.stringify({ model, stream:true, messages:convert(convo) }) });
       await check(r);
       await readSSE(r, d => { if (d.error) throw new Error(d.error.message||'Erreur'); const t = d.choices?.[0]?.delta?.content; if (t) onText(t); });
     },
